@@ -1,0 +1,740 @@
+# ============================================================================
+# Build RootFS for Xiaomi POCO F5 / Redmi Note 12 Turbo (marble, SM7475)
+#
+# This repo only ASSEMBLES a root filesystem. Every device .deb comes from
+# GhfunNiHe/marble-deb-package (linux-redmi-marble, marble-device-support, ...).
+#
+# Artifacts (Android sparse images, then xz -9e):
+#   rootfs.simg.xz   sparse ext4, NO partition table, LABEL=linux
+#   esp.simg.xz      sparse FAT,  LABEL=ESP, 4096-byte logical sectors
+#
+# Decompress with `xz -d` first; fastboot detects sparse by the header magic,
+# so the .simg files flash straight into the matching partitions.
+#
+# Boot chain on the device: ABL -> boot_b (U-Boot) -> esp:/extlinux/extlinux.conf
+#   -> esp:/marble/vmlinuz + esp:/marble/sm8475-xiaomi-marble.dtb
+#   -> root=PARTLABEL=linux (no initramfs).
+# ============================================================================
+
+name: Build RootFS
+
+on:
+  workflow_dispatch:
+    inputs:
+      distro_suite:
+        description: 'Debian Version'
+        type: choice
+        options:
+          - trixie
+          - forky
+        default: 'trixie'
+
+      desktop:
+        description: 'Desktop Environment (server = no DE)'
+        type: choice
+        options:
+          - Phosh
+          - KDE Plasma Mobile
+          - GNOME
+          - server
+        default: 'Phosh'
+
+      autologin:
+        description: 'Autologin'
+        type: boolean
+        default: true
+
+      username:
+        description: 'Username'
+        type: string
+        default: 'marble'
+
+      hostname:
+        description: 'Hostname'
+        type: string
+        default: 'xiaomi-marble'
+
+      language:
+        description: 'System language'
+        type: choice
+        options:
+          - 'None (C.UTF-8)'
+          - 'en_US.UTF-8'
+          - 'zh_CN.UTF-8'
+          - 'zh_TW.UTF-8'
+          - 'ja_JP.UTF-8'
+          - 'ko_KR.UTF-8'
+          - 'de_DE.UTF-8'
+          - 'fr_FR.UTF-8'
+          - 'es_ES.UTF-8'
+          - 'ru_RU.UTF-8'
+        default: 'None (C.UTF-8)'
+
+      image_size:
+        description: 'rootfs.img size (grown to the real partition on first boot)'
+        type: string
+        default: '10G'
+
+      esp_size:
+        description: 'esp.img size (must fit the esp partition; marble P34 = 128M)'
+        type: string
+        default: '128M'
+
+      root_partition:
+        description: 'GPT partition label the rootfs boots from. Goes into /etc/fstab; the kernel postinst copies it into extlinux.conf root='
+        type: string
+        default: 'linux'
+
+      deb_repo:
+        description: 'Repository that publishes the device .debs'
+        type: string
+        default: 'GhfunNiHe/marble-deb-package'
+
+      deb_release:
+        description: 'Release tag to pull .debs from ("latest" = newest release)'
+        type: string
+        default: 'latest'
+
+      extra_deb_urls:
+        description: 'Extra .deb URLs, one per line (optional)'
+        type: string
+        default: ''
+
+      android_boot_entry:
+        description: 'Write esp:/extlinux/others.env so U-Boot offers an Android boot entry'
+        type: boolean
+        default: true
+
+      extra_packages:
+        description: 'Extra packages appended to the base set (optional, space separated)'
+        type: string
+        default: ''
+
+env:
+  ROOTFS_MOUNT: /mnt/rootfs
+  ESP_MOUNT: /mnt/rootfs/boot/efi
+
+jobs:
+  build-rootfs:
+    name: "Assemble RootFS"
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+
+    steps:
+      # ----------------------------------------------------------------
+      # Args & Tools
+      # ----------------------------------------------------------------
+
+      - name: "Checkout Repo"
+        uses: actions/checkout@v7
+
+      - name: "Verify Arguments"
+        run: |
+          set -euo pipefail
+          if [[ "${{ inputs.image_size }}" =~ ^[0-9]+[MG]?$ ]]; then
+            echo "✓ image_size=${{ inputs.image_size }}"
+          else
+            echo "::error::image_size must look like 10G / 8192M"
+            exit 1
+          fi
+          if [[ "${{ inputs.esp_size }}" =~ ^[0-9]+[MG]?$ ]]; then
+            echo "✓ esp_size=${{ inputs.esp_size }}"
+          else
+            echo "::error::esp_size must look like 128M / 1G"
+            exit 1
+          fi
+          case "${{ inputs.esp_size }}" in
+            *G|*g|*[5-9][0-9][0-9]M) : ;;
+            *) echo "::warning::esp_size may not fit an existing 128M 'esp' partition" ;;
+          esac
+          echo "✓ Arguments verified"
+
+      - name: "Install Build Tools"
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            debootstrap dosfstools mtools e2fsprogs util-linux \
+            kmod python3 curl ca-certificates git \
+            xz-utils android-sdk-libsparse-utils
+          command -v img2simg >/dev/null || { echo "::error::img2simg is missing"; exit 1; }
+          echo "✓ Build tools installed"
+
+      # ----------------------------------------------------------------
+      # Collect the device .debs
+      # ----------------------------------------------------------------
+
+      - name: "Download Device .debs"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p debs
+          REPO="${{ inputs.deb_repo }}"
+          REL="${{ inputs.deb_release }}"
+          if [ "$REL" = "latest" ]; then
+            REL="$(gh release view --repo "$REPO" --json tagName -q .tagName)"
+          fi
+          echo "  source: $REPO @ $REL"
+          gh release download "$REL" --repo "$REPO" --pattern '*.deb' --dir debs --clobber
+          echo "  downloaded:"
+          ls -lh debs
+          echo "✓ Device .debs downloaded"
+
+      - name: "Download Extra .debs"
+        if: ${{ inputs.extra_deb_urls != '' }}
+        run: |
+          set -euo pipefail
+          mkdir -p debs
+          while IFS= read -r url; do
+            [ -n "$url" ] || continue
+            echo "  fetching $url"
+            curl -fsSL -O --output-dir debs "$url"
+          done <<< "${{ inputs.extra_deb_urls }}"
+          ls -lh debs
+          echo "✓ Extra .debs downloaded"
+
+      - name: "Summarize Package Set"
+        run: |
+          set -euo pipefail
+          echo "  packages to install into the rootfs:"
+          for f in debs/*.deb; do
+            printf '    %-52s %s\n' "$(basename "$f")" "$(dpkg-deb -f "$f" Package Version Architecture | tr '\n' ' ')"
+          done
+          echo "✓ Package set summarized"
+
+      # ----------------------------------------------------------------
+      # rootfs.img
+      # ----------------------------------------------------------------
+
+      - name: "Create RootFS Image"
+        run: |
+          set -euo pipefail
+          truncate -s "${{ inputs.image_size }}" rootfs.img
+          mkfs.ext4 -q -L linux rootfs.img
+          echo "✓ rootfs.img created (${{ inputs.image_size }})"
+
+      - name: "Mount RootFS Image"
+        run: |
+          set -euo pipefail
+          sudo mkdir -p "$ROOTFS_MOUNT"
+          sudo mount -o loop rootfs.img "$ROOTFS_MOUNT"
+          df -h "$ROOTFS_MOUNT"
+          echo "✓ rootfs.img mounted at $ROOTFS_MOUNT"
+
+      - name: "Run Debootstrap (${{ inputs.distro_suite }})"
+        run: |
+          set -euo pipefail
+          sudo debootstrap \
+            --arch=arm64 \
+            --components=main,contrib,non-free-firmware \
+            "${{ inputs.distro_suite }}" \
+            "$ROOTFS_MOUNT" \
+            http://deb.debian.org/debian/
+          echo "✓ Debootstrap complete"
+
+      - name: "Mount Virtual File Systems"
+        run: |
+          set -euo pipefail
+          sudo mount --bind /dev "$ROOTFS_MOUNT/dev"
+          sudo mount --bind /dev/pts "$ROOTFS_MOUNT/dev/pts"
+          sudo mount -t proc proc "$ROOTFS_MOUNT/proc"
+          sudo mount -t sysfs sys "$ROOTFS_MOUNT/sys"
+          sudo cp /etc/resolv.conf "$ROOTFS_MOUNT/etc/resolv.conf"
+          # Never let a maintainer script start a service mid-build.
+          printf '#!/bin/sh\nexit 101\n' | sudo tee "$ROOTFS_MOUNT/usr/sbin/policy-rc.d" >/dev/null
+          sudo chmod 755 "$ROOTFS_MOUNT/usr/sbin/policy-rc.d"
+          echo "✓ Virtual file systems mounted, policy-rc.d installed"
+
+      # ----------------------------------------------------------------
+      # esp.img  -- MUST exist and be mounted BEFORE the kernel deb is
+      # installed, because linux-redmi-marble's postinst only writes the ESP
+      # when /boot/efi is a mountpoint.
+      #
+      # The 4096-byte logical sector size is not optional: marble's UFS has
+      # 4096-byte logical sectors and the Linux FAT driver hard-fails with
+      # "logical sector size too small for device" on a 512-byte FAT. U-Boot
+      # tolerates both, Linux does not. pmOS encodes the same requirement as
+      # deviceinfo_rootfs_image_sector_size="4096".
+      # ----------------------------------------------------------------
+
+      - name: "Create ESP Image"
+        run: |
+          set -euo pipefail
+          truncate -s "${{ inputs.esp_size }}" esp.img
+          mkfs.fat -S 4096 -n ESP esp.img
+          echo "--- BPB check ---"
+          python3 - <<'PY'
+          import sys
+          d = open('esp.img', 'rb').read(512)
+          bps = int.from_bytes(d[0x0b:0x0d], 'little')
+          spc = d[0x0d]
+          r16 = int.from_bytes(d[0x13:0x15], 'little')
+          r32 = int.from_bytes(d[0x20:0x24], 'little')
+          total = (r16 or r32)
+          print(f"  bytes/sector    = {bps}")
+          print(f"  sectors/cluster = {spc} ({bps * spc} bytes)")
+          print(f"  size            = {total * bps / 1024 / 1024:.0f} MiB")
+          print(f"  type string     = {d[0x36:0x3e].decode('latin1').strip()}")
+          if bps != 4096:
+              sys.exit("FATAL: logical sector size must be 4096 on marble")
+          PY
+          echo "✓ esp.img created (${{ inputs.esp_size }}, 4096B logical sectors)"
+
+      - name: "Mount ESP Image"
+        run: |
+          set -euo pipefail
+          sudo mkdir -p "$ESP_MOUNT"
+          sudo mount -o loop esp.img "$ESP_MOUNT"
+          sudo chroot "$ROOTFS_MOUNT" /bin/sh -c 'mountpoint -q /boot/efi' \
+            && echo "✓ /boot/efi is a mountpoint inside the chroot"
+          echo "✓ esp.img mounted at $ESP_MOUNT"
+
+      # ----------------------------------------------------------------
+      # Packages
+      # ----------------------------------------------------------------
+
+      - name: "Install Base Packages"
+        run: |
+          set -euo pipefail
+          sudo chroot "$ROOTFS_MOUNT" apt-get update
+          # Cellular: qrtr-ns + rmtfs are hard prerequisites for the modem to
+          # boot at all (rmtfs serves the modem's EFS; without it remoteproc
+          # stays offline), tqftpserv serves PD firmware. ModemManager itself
+          # is NOT installed from Debian: marble-deb-package builds a patched
+          # one (AFW-gated GNSS unlock for GPS) that lands here as a deb.
+          sudo chroot "$ROOTFS_MOUNT" apt-get install -y \
+            systemd systemd-sysv \
+            sudo vim nano wget curl rsync less \
+            network-manager openssh-server \
+            wpasupplicant dbus \
+            ca-certificates chrony \
+            iw lm-sensors wireless-regdb \
+            net-tools iproute2 usbutils \
+            kmod e2fsprogs dosfstools util-linux \
+            bluez zram-tools \
+            hexagonrpcd \
+            qrtr-tools rmtfs tqftpserv \
+            libglib2.0-0 libprotobuf-c1 libqmi-glib5 libmbim-glib4 libyaml-0-2 \
+            ${{ inputs.extra_packages }}
+          echo "✓ Base packages installed"
+
+      - name: "Use Upstream Regulatory Database"
+        run: |
+          set -euo pipefail
+          sudo chroot "$ROOTFS_MOUNT" update-alternatives --set regulatory.db \
+            /lib/firmware/regulatory.db-upstream || true
+          echo "✓ Regulatory database step done"
+
+      # fstab must exist BEFORE the debs are installed: the kernel package's
+      # postinst reads the "/" entry out of it to decide what root= to write
+      # into extlinux.conf (that is what makes the label dynamic).
+      - name: "Configure fstab"
+        run: |
+          set -euo pipefail
+          # The ESP line is not parameterised: U-Boot looks the ESP up by the
+          # GPT label "esp" (hardcoded in board/qualcomm/xiaomi-marble.env), so
+          # renaming it breaks the boot chain before Linux is even reached.
+          sudo tee "$ROOTFS_MOUNT/etc/fstab" >/dev/null <<EOF
+          # <file system>          <mount point>  <type>  <options>                                            <dump> <pass>
+          PARTLABEL=${{ inputs.root_partition }}  /  ext4  defaults,x-systemd.growfs                            0      1
+          PARTLABEL=esp          /boot/efi      vfat    defaults,noatime,nofail,x-systemd.device-timeout=10s  0      2
+          EOF
+          sudo cat "$ROOTFS_MOUNT/etc/fstab"
+          echo "✓ fstab configured (root=PARTLABEL=${{ inputs.root_partition }})"
+
+      # Preset the China Telecom cellular profile so the modem comes up as a
+      # fallback route out of the box (autoconnect, metric below Wi-Fi's 600).
+      # The Bearer netdev is created by the IPA/QMAP driver at connect time, so
+      # only the NM profile is needed here. IPv6 prefix delegation from the
+      # carrier means the address differs per boot - no static config.
+
+      - name: "Install All .deb Packages"
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          pkgs=(debs/*.deb)
+          [ "${#pkgs[@]}" -gt 0 ] || { echo "::error::no .deb files collected"; exit 1; }
+          sudo cp "${pkgs[@]}" "$ROOTFS_MOUNT/tmp/"
+          sudo ls -lh "$ROOTFS_MOUNT/tmp/"*.deb
+          sudo chroot "$ROOTFS_MOUNT" bash -c "
+            apt-get update
+            apt-get install -y /tmp/*.deb 2>&1 || apt-get install -f -y
+            rm -f /tmp/*.deb
+          "
+          echo "✓ All .deb packages installed"
+
+      # ----------------------------------------------------------------
+      # ESP assertions -- the postinst is the only thing that populates the
+      # ESP, and it stays silent when it cannot. Never trust "build ok".
+      # ----------------------------------------------------------------
+
+      - name: "Assert ESP Payload"
+        run: |
+          set -euo pipefail
+          ESP="$ESP_MOUNT"
+          echo "--- ESP tree ---"
+          sudo find "$ESP" -mindepth 1 | sort
+          sudo test -s "$ESP/marble/vmlinuz"                     || { echo "::error::ESP missing marble/vmlinuz"; exit 1; }
+          sudo test -s "$ESP/marble/sm8475-xiaomi-marble.dtb"    || { echo "::error::ESP missing marble/sm8475-xiaomi-marble.dtb"; exit 1; }
+          sudo test -s "$ESP/extlinux/extlinux.conf"             || { echo "::error::ESP missing extlinux/extlinux.conf"; exit 1; }
+          # booti cannot load a compressed image, so the ESP kernel must be
+          # the raw arm64 Image.
+          sudo file "$ESP/marble/vmlinuz" | grep -q "ARM64 boot executable Image" \
+            || { echo "::error::ESP vmlinuz is not an uncompressed ARM64 Image"; sudo file "$ESP/marble/vmlinuz"; exit 1; }
+          echo "--- extlinux.conf ---"
+          sudo cat "$ESP/extlinux/extlinux.conf"
+          # The postinst derives root= from the "/" entry of /etc/fstab, so this
+          # checks the whole chain the device will actually boot through.
+          want="root=PARTLABEL=${{ inputs.root_partition }}"
+          have="$(sudo grep -o 'root=[^ ]*' "$ESP/extlinux/extlinux.conf" | head -1)"
+          [ "$have" = "$want" ] || {
+            echo "::error::extlinux.conf carries '$have' but the rootfs fstab says '$want'"
+            echo "::error::linux-redmi-marble's postinst reads /etc/fstab; check that fstab was written before the debs were installed"
+            exit 1
+          }
+          echo "✓ ESP payload verified ($have)"
+
+      # U-Boot's preboot reads esp:/extlinux/others.env. Keep next_title /
+      # next_boot out of it: Debian ships no marble-oneshot-clear.service, so
+      # a one-shot entry would come back every single boot.
+      - name: "Write U-Boot Others Entry"
+        if: ${{ inputs.android_boot_entry }}
+        run: |
+          set -euo pipefail
+          sudo mkdir -p "$ESP_MOUNT/extlinux"
+          sudo install -Dm644 extras/others.env "$ESP_MOUNT/extlinux/others.env"
+          sudo cat "$ESP_MOUNT/extlinux/others.env"
+          echo "✓ others.env written"
+
+      # ----------------------------------------------------------------
+      # System tuning
+      # ----------------------------------------------------------------
+
+      - name: "Set Hostname"
+        run: |
+          set -euo pipefail
+          echo "${{ inputs.hostname }}" | sudo tee "$ROOTFS_MOUNT/etc/hostname" >/dev/null
+          grep -q "127.0.1.1.*${{ inputs.hostname }}" "$ROOTFS_MOUNT/etc/hosts" \
+            || echo "127.0.1.1 ${{ inputs.hostname }}" | sudo tee -a "$ROOTFS_MOUNT/etc/hosts" >/dev/null
+          echo "✓ Hostname set to ${{ inputs.hostname }}"
+
+      - name: "Configure Locale"
+        run: |
+          set -euo pipefail
+          LANG_CHOICE="${{ inputs.language }}"
+          if [ "$LANG_CHOICE" = 'None (C.UTF-8)' ]; then
+            echo "✓ System locale stays C.UTF-8"
+          else
+            sudo chroot "$ROOTFS_MOUNT" apt-get update
+            sudo chroot "$ROOTFS_MOUNT" apt-get install -y locales
+            sudo sed -i 's/^# *\(en_US\.UTF-8\)/\1/' "$ROOTFS_MOUNT/etc/locale.gen"
+            sudo sed -i "s/^# *\\(${LANG_CHOICE//./\\.}\\)/\\1/" "$ROOTFS_MOUNT/etc/locale.gen"
+            sudo chroot "$ROOTFS_MOUNT" locale-gen
+            echo "LANG=$LANG_CHOICE" | sudo tee "$ROOTFS_MOUNT/etc/default/locale" >/dev/null
+            echo "✓ Locale set to $LANG_CHOICE (+ en_US.UTF-8)"
+          fi
+
+      - name: "Create User"
+        run: |
+          set -euo pipefail
+          GROUPS="sudo"
+          for g in audio video render input netdev plugdev; do
+            if sudo chroot "$ROOTFS_MOUNT" getent group "$g" >/dev/null; then
+              GROUPS="$GROUPS,$g"
+            fi
+          done
+          echo "  groups: $GROUPS"
+          sudo chroot "$ROOTFS_MOUNT" useradd -m -s /bin/bash -G "$GROUPS" "${{ inputs.username }}"
+          echo "✓ User ${{ inputs.username }} created"
+
+      - name: "Set Passwords"
+        env:
+          ROOTFS_PASSWORD: ${{ secrets.ROOTFS_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ROOTFS_PASSWORD:-}" ]; then
+            ROOTFS_PASSWORD="password"
+            echo "::warning::ROOTFS_PASSWORD not set, falling back to the insecure default 'password'"
+          else
+            echo "::add-mask::$ROOTFS_PASSWORD"
+          fi
+          printf '%s:%s\n' "${{ inputs.username }}" "$ROOTFS_PASSWORD" | sudo chroot "$ROOTFS_MOUNT" chpasswd
+          printf 'root:%s\n' "$ROOTFS_PASSWORD" | sudo chroot "$ROOTFS_MOUNT" chpasswd
+          echo "✓ Passwords set"
+
+      # ----------------------------------------------------------------
+      # Desktop environment
+      # ----------------------------------------------------------------
+
+      - name: "Install Phosh"
+        if: ${{ inputs.desktop == 'Phosh' }}
+        run: |
+          set -euo pipefail
+          sudo chroot "$ROOTFS_MOUNT" apt-get update
+          sudo chroot "$ROOTFS_MOUNT" apt-get install -y \
+            phosh-core phosh-mobile-settings gnome-terminal gdm3 firefox-esr \
+            || sudo chroot "$ROOTFS_MOUNT" apt-get install -y phosh gdm3
+          echo "✓ Phosh installed"
+
+      - name: "Install KDE Plasma Mobile"
+        if: ${{ inputs.desktop == 'KDE Plasma Mobile' }}
+        run: |
+          set -euo pipefail
+          sudo chroot "$ROOTFS_MOUNT" apt-get update
+          sudo chroot "$ROOTFS_MOUNT" apt-get install -y \
+            plasma-mobile plasma-workspace plasma-nm \
+            sddm konsole firefox-esr \
+            pipewire-alsa
+          echo "✓ KDE Plasma Mobile installed"
+
+      - name: "Install GNOME"
+        if: ${{ inputs.desktop == 'GNOME' }}
+        run: |
+          set -euo pipefail
+          sudo chroot "$ROOTFS_MOUNT" apt-get update
+          sudo chroot "$ROOTFS_MOUNT" apt-get install -y \
+            gnome-shell gnome-session gnome-terminal \
+            gdm3 firefox-esr gnome-control-center
+          echo "✓ GNOME installed"
+
+      - name: "Configure GDM (Phosh / GNOME)"
+        if: ${{ (inputs.desktop == 'Phosh' || inputs.desktop == 'GNOME') && !inputs.autologin }}
+        run: |
+          set -euo pipefail
+          sudo chroot "$ROOTFS_MOUNT" systemctl enable gdm3
+          sudo chroot "$ROOTFS_MOUNT" systemctl set-default graphical.target
+          echo "✓ GDM enabled (manual login)"
+
+      - name: "Configure GDM Autologin (Phosh / GNOME)"
+        if: ${{ (inputs.desktop == 'Phosh' || inputs.desktop == 'GNOME') && inputs.autologin }}
+        run: |
+          set -euo pipefail
+          sudo mkdir -p "$ROOTFS_MOUNT/etc/gdm3"
+          sudo tee "$ROOTFS_MOUNT/etc/gdm3/daemon.conf" >/dev/null <<EOF
+          [daemon]
+          AutomaticLoginEnable=true
+          AutomaticLogin=${{ inputs.username }}
+          EOF
+          if [ "${{ inputs.desktop }}" = 'Phosh' ]; then
+            # /usr/share/wayland-sessions/phosh.desktop -> Session=phosh
+            sudo mkdir -p "$ROOTFS_MOUNT/var/lib/AccountsService/users"
+            sudo tee "$ROOTFS_MOUNT/var/lib/AccountsService/users/${{ inputs.username }}" >/dev/null <<EOF
+          [User]
+          Session=phosh
+          XSession=phosh
+          SystemAccount=false
+          EOF
+          fi
+          sudo chroot "$ROOTFS_MOUNT" systemctl enable gdm3
+          sudo chroot "$ROOTFS_MOUNT" systemctl set-default graphical.target
+          echo "✓ GDM autologin configured for ${{ inputs.username }}"
+
+      - name: "Configure SDDM (Plasma Mobile)"
+        if: ${{ inputs.desktop == 'KDE Plasma Mobile' }}
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.autologin }}" = 'true' ]; then
+            sudo mkdir -p "$ROOTFS_MOUNT/etc/sddm.conf.d"
+            sudo tee "$ROOTFS_MOUNT/etc/sddm.conf.d/autologin.conf" >/dev/null <<EOF
+          [Autologin]
+          User=${{ inputs.username }}
+          Session=plasma-mobile
+          EOF
+          fi
+          sudo chroot "$ROOTFS_MOUNT" systemctl enable sddm
+          sudo chroot "$ROOTFS_MOUNT" systemctl set-default graphical.target
+          echo "✓ SDDM configured"
+
+      # ----------------------------------------------------------------
+      # Services + fstab
+      # ----------------------------------------------------------------
+
+      - name: "Enable Services"
+        run: |
+          set -euo pipefail
+          sudo chroot "$ROOTFS_MOUNT" bash -c '
+            set -u
+            enable() {
+              if [ -e "/usr/lib/systemd/system/$1" ] || [ -e "/etc/systemd/system/$1" ]; then
+                systemctl enable "$1" >/dev/null 2>&1 && echo "  enabled $1" || echo "  FAILED $1"
+              else
+                echo "  skip $1 (no unit)"
+              fi
+            }
+            enable NetworkManager.service
+            enable ssh.service
+            # Sensors: hexagonrpcd (Debian, source package hexagonrpc) serves the
+            # DSP side, libssc + iio-sensor-proxy-ssc turn it into D-Bus. Both
+            # names are the Debian ones; marble-device-support drops in on
+            # hexagonrpcd.service to point the daemon at the SLPI and at the
+            # /usr/share/qcom registry that firmware-redmi-marble installs.
+            enable iio-sensor-proxy.service
+            enable hexagonrpcd.service
+            # marble-mac-restore.service (marble-device-support >= 1.0.0-5)
+            # restores both radios from persist: copies wlan_mac.bin into the
+            # firmware dir and loads ath11k_pci (WLAN), then programs the
+            # derived Bluetooth address through btmgmt (BT). Replaces the
+            # 1.0.0-3/1.0.0-4 pair marble-wlan-mac + marble-bt-mac; the unit
+            # is already enabled by the deb's dh_installsystemd postinst, this
+            # is a belt-and-braces explicit enable.
+            enable marble-mac-restore.service
+            enable marble-panel-on.service
+            enable marble-compositor-boost.service
+            enable marble-hardware-tuning.service
+            enable marble-touchboost.service
+          '
+          echo "✓ Services enabled"
+
+      - name: "Fix Permissions"
+        run: |
+          set -euo pipefail
+          for p in /usr/bin/hexagonrpcd /usr/libexec/iio-sensor-proxy /usr/bin/monitor-sensor /usr/bin/ssccli; do
+            if sudo test -f "$ROOTFS_MOUNT$p"; then
+              sudo chmod 755 "$ROOTFS_MOUNT$p"
+              echo "  chmod +x $p"
+            fi
+          done
+          echo "✓ Permissions checked"
+
+      # ----------------------------------------------------------------
+      # Finalize
+      # ----------------------------------------------------------------
+
+      - name: "Sanity Check the RootFS"
+        run: |
+          set -euo pipefail
+          for p in /sbin/init /etc/fstab /usr/lib/modules /boot/efi; do
+            sudo test -e "$ROOTFS_MOUNT$p" || { echo "::error::rootfs missing $p"; exit 1; }
+          done
+          test "$(sudo readlink -f "$ROOTFS_MOUNT/sbin/init")" = "$ROOTFS_MOUNT/usr/lib/systemd/systemd" \
+            || echo "::warning::/sbin/init does not resolve to systemd"
+          echo "--- kernel modules ---"
+          sudo ls "$ROOTFS_MOUNT"/usr/lib/modules/
+          sudo test -s "$ROOTFS_MOUNT"/usr/share/linux-redmi-marble/kernel.release \
+            || echo "::warning::kernel.release marker missing"
+          echo "✓ RootFS sanity check passed"
+
+      - name: "Clean Up"
+        run: |
+          set -euo pipefail
+          sudo chroot "$ROOTFS_MOUNT" apt-get clean || true
+          sudo rm -rf "$ROOTFS_MOUNT/var/lib/apt/lists"/*
+          sudo rm -f "$ROOTFS_MOUNT/usr/sbin/policy-rc.d"
+          sudo rm -f "$ROOTFS_MOUNT/etc/resolv.conf"
+          echo "✓ Cleaned"
+
+      - name: "Unmount Everything"
+        if: always()
+        run: |
+          set -euo pipefail
+          sudo umount "$ESP_MOUNT"             2>/dev/null || true
+          sudo umount "$ROOTFS_MOUNT/dev/pts"  2>/dev/null || true
+          sudo umount "$ROOTFS_MOUNT/dev"      2>/dev/null || true
+          sudo umount "$ROOTFS_MOUNT/proc"     2>/dev/null || true
+          sudo umount "$ROOTFS_MOUNT/sys"      2>/dev/null || true
+          sudo umount "$ROOTFS_MOUNT"          2>/dev/null || true
+          echo "--- remaining loop devices ---"
+          losetup -a || true
+          echo "✓ Unmounted"
+
+      # ----------------------------------------------------------------
+      # Sparse + xz
+      #
+      # fastboot only writes the non-empty chunks of a sparse image, and this
+      # device is set up for it (the pmOS port carries
+      # deviceinfo_flash_sparse="true"). img2simg rewrites the raw ext4/FAT
+      # image into Android's sparse format, xz does the transport
+      # compression, and upload-artifact is told not to recompress.
+      # fastboot detects sparse by the header magic, not by the file name.
+      # ----------------------------------------------------------------
+
+      - name: "Convert to Sparse Images"
+        run: |
+          set -euo pipefail
+          img2simg rootfs.img rootfs.simg
+          img2simg esp.img    esp.simg
+          python3 - <<'PY'
+          import sys
+          MAGIC = 0xED26FF3A
+          ok = True
+          for p in ("rootfs.simg", "esp.simg"):
+              with open(p, "rb") as f:
+                  h = f.read(28)
+              magic = int.from_bytes(h[0:4], "little")
+              blk_size = int.from_bytes(h[12:16], "little")      # sparse blk_sz
+              total_blks = int.from_bytes(h[16:20], "little")
+              total_chunks = int.from_bytes(h[20:24], "little")
+              print(f"  {p}: magic=0x{magic:08X} blk_sz={blk_size} "
+                    f"blocks={total_blks} chunks={total_chunks}")
+              if magic != MAGIC:
+                  ok = False
+              if blk_size != 4096:
+                  print(f"  ::warning::{p} sparse blk_sz is {blk_size}, expected 4096")
+          if not ok:
+              sys.exit("FATAL: not an Android sparse image")
+          PY
+          ls -lh rootfs.img esp.img rootfs.simg esp.simg
+          echo "✓ Sparse images built"
+
+      - name: "Compress Images (xz -9e)"
+        run: |
+          set -euo pipefail
+          xz -9e -T0 -v rootfs.simg
+          xz -9e -T0 -v esp.simg
+          xz -t rootfs.simg.xz
+          xz -t esp.simg.xz
+          ls -lh rootfs.simg.xz esp.simg.xz
+          echo "✓ Images compressed"
+
+      - name: "Checksums"
+        run: |
+          set -euo pipefail
+          sha256sum rootfs.simg.xz esp.simg.xz | tee SHA256SUMS
+          echo "✓ Checksums generated"
+
+      # ----------------------------------------------------------------
+      # Artifacts
+      # ----------------------------------------------------------------
+
+      - name: "Upload RootFS Image"
+        uses: actions/upload-artifact@v7
+        with:
+          name: rootfs-${{ inputs.distro_suite }}-${{ inputs.desktop }}
+          path: |
+            rootfs.simg.xz
+            SHA256SUMS
+          retention-days: 14
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: "Upload ESP Image"
+        uses: actions/upload-artifact@v7
+        with:
+          name: esp-${{ inputs.distro_suite }}-${{ inputs.desktop }}
+          path: esp.simg.xz
+          retention-days: 14
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: "Summary"
+        run: |
+          {
+            echo "### RootFS build"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| suite | \`${{ inputs.distro_suite }}\` |"
+            echo "| desktop | \`${{ inputs.desktop }}\` |"
+            echo "| hostname | \`${{ inputs.hostname }}\` |"
+            echo "| user | \`${{ inputs.username }}\` |"
+            echo "| rootfs.simg.xz | sparse ext4 \`${{ inputs.image_size }}\`, root=PARTLABEL=${{ inputs.root_partition }} |"
+            echo "| esp.simg.xz | sparse FAT \`${{ inputs.esp_size }}\`, 4096B logical sectors, LABEL=ESP |"
+            echo "| .debs | \`${{ inputs.deb_repo }}@${{ inputs.deb_release }}\` |"
+            echo
+            echo '```'
+            echo "xz -d rootfs.simg.xz esp.simg.xz"
+            echo "fastboot flash esp   esp.simg"
+            echo "fastboot flash linux rootfs.simg"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
