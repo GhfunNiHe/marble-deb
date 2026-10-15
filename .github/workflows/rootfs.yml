@@ -35,6 +35,7 @@ on:
         options:
           - Phosh
           - KDE Plasma Mobile
+          - KDE Plasma
           - GNOME
           - server
         default: 'Phosh'
@@ -47,12 +48,17 @@ on:
       username:
         description: 'Username'
         type: string
-        default: 'marble'
+        default: 'Redmi'
 
       hostname:
         description: 'Hostname'
         type: string
-        default: 'xiaomi-marble'
+        default: 'marble-debian'
+
+      password:
+        description: 'Image password for the user and root (default: password; leave empty to use the ROOTFS_PASSWORD secret)'
+        type: string
+        default: 'password'
 
       language:
         description: 'System language'
@@ -450,18 +456,25 @@ jobs:
 
       - name: "Set Passwords"
         env:
+          INPUT_PASSWORD: ${{ inputs.password }}
           ROOTFS_PASSWORD: ${{ secrets.ROOTFS_PASSWORD }}
         run: |
           set -euo pipefail
-          if [ -z "${ROOTFS_PASSWORD:-}" ]; then
-            ROOTFS_PASSWORD="password"
-            echo "::warning::ROOTFS_PASSWORD not set, falling back to the insecure default 'password'"
+          # Precedence: the password input (default 'password') wins, so the
+          # image password is deterministic; leaving the input empty falls back
+          # to the ROOTFS_PASSWORD secret, and to 'password' when neither is set.
+          if [ -n "${INPUT_PASSWORD:-}" ]; then
+            PASS="$INPUT_PASSWORD"
+          elif [ -n "${ROOTFS_PASSWORD:-}" ]; then
+            PASS="$ROOTFS_PASSWORD"
           else
-            echo "::add-mask::$ROOTFS_PASSWORD"
+            PASS="password"
+            echo "::warning::no password input and no ROOTFS_PASSWORD secret, falling back to the insecure default 'password'"
           fi
-          printf '%s:%s\n' "${{ inputs.username }}" "$ROOTFS_PASSWORD" | sudo chroot "$ROOTFS_MOUNT" chpasswd
-          printf 'root:%s\n' "$ROOTFS_PASSWORD" | sudo chroot "$ROOTFS_MOUNT" chpasswd
-          echo "✓ Passwords set"
+          echo "::add-mask::$PASS"
+          printf '%s:%s\n' "${{ inputs.username }}" "$PASS" | sudo chroot "$ROOTFS_MOUNT" chpasswd
+          printf 'root:%s\n' "$PASS" | sudo chroot "$ROOTFS_MOUNT" chpasswd
+          echo "✓ Passwords set for ${{ inputs.username }} and root"
 
       # ----------------------------------------------------------------
       # Desktop environment
@@ -487,6 +500,22 @@ jobs:
             sddm konsole firefox-esr \
             pipewire-alsa
           echo "✓ KDE Plasma Mobile installed"
+
+      # Plain Plasma, no mobile shell: kde-plasma-desktop is the Plasma 6
+      # metapackage in trixie (5:162, arm64). Its session name is "plasma"
+      # (/usr/share/wayland-sessions/plasma.desktop), where the option above
+      # installs plasma-mobile.desktop. plasma-nm provides the NetworkManager
+      # applet this phone needs for Wi-Fi and mobile data.
+      - name: "Install KDE Plasma"
+        if: ${{ inputs.desktop == 'KDE Plasma' }}
+        run: |
+          set -euo pipefail
+          sudo chroot "$ROOTFS_MOUNT" apt-get update
+          sudo chroot "$ROOTFS_MOUNT" apt-get install -y \
+            kde-plasma-desktop plasma-nm \
+            sddm konsole firefox-esr \
+            pipewire-alsa
+          echo "✓ KDE Plasma installed"
 
       - name: "Install GNOME"
         if: ${{ inputs.desktop == 'GNOME' }}
@@ -530,21 +559,26 @@ jobs:
           sudo chroot "$ROOTFS_MOUNT" systemctl set-default graphical.target
           echo "✓ GDM autologin configured for ${{ inputs.username }}"
 
-      - name: "Configure SDDM (Plasma Mobile)"
-        if: ${{ inputs.desktop == 'KDE Plasma Mobile' }}
+      - name: "Configure SDDM (Plasma / Plasma Mobile)"
+        if: ${{ inputs.desktop == 'KDE Plasma Mobile' || inputs.desktop == 'KDE Plasma' }}
         run: |
           set -euo pipefail
+          if [ "${{ inputs.desktop }}" = 'KDE Plasma Mobile' ]; then
+            SESSION=plasma-mobile
+          else
+            SESSION=plasma
+          fi
           if [ "${{ inputs.autologin }}" = 'true' ]; then
             sudo mkdir -p "$ROOTFS_MOUNT/etc/sddm.conf.d"
             sudo tee "$ROOTFS_MOUNT/etc/sddm.conf.d/autologin.conf" >/dev/null <<EOF
           [Autologin]
           User=${{ inputs.username }}
-          Session=plasma-mobile
+          Session=$SESSION
           EOF
           fi
           sudo chroot "$ROOTFS_MOUNT" systemctl enable sddm
           sudo chroot "$ROOTFS_MOUNT" systemctl set-default graphical.target
-          echo "✓ SDDM configured"
+          echo "✓ SDDM configured (session $SESSION)"
 
       # ----------------------------------------------------------------
       # Services + fstab
