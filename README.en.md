@@ -7,7 +7,7 @@
 This repository assembles **Debian arm64** rootfs and ESP images for the **Xiaomi POCO F5 / Redmi Note 12 Turbo (marble, Qualcomm SM7475)** with **GitHub Actions**.
 Both artifacts are Android sparse images (`.simg.xz`) that are flashed to their partitions with `fastboot` after decompression.
 
-This repository only **assembles** images and contains no device source code: every device `.deb` (kernel, device-support layer, ModemManager, libqmi, libssc, iio-sensor-proxy-ssc, libva-v4l2, firmware) comes from a release of [GhfunNiHe/marble-deb-package](https://github.com/GhfunNiHe/marble-deb-package).
+This repository only **assembles** images and contains no device source code: every device `.deb` (kernel, device-support layer, ModemManager, libqmi, libssc, iio-sensor-proxy-ssc, libva-v4l2, firmware) comes from a release of [GhfunNiHe/marble-deb-packages](https://github.com/GhfunNiHe/marble-deb-packages).
 The system runs **without an initramfs**; U-Boot boots the kernel directly.
 
 ## Usage
@@ -29,7 +29,7 @@ The system runs **without an initramfs**; U-Boot boots the kernel directly.
 | **image_size** | `10G` | Initial rootfs size; `fstab` carries `x-systemd.growfs`, so the first boot grows it to the real partition |
 | **esp_size** | `128M` | ESP image size (marble's esp partition is 128M — do not exceed it) |
 | **root_partition** | `linux` | GPT label of the root partition; goes into `fstab`, and the kernel package's postinst copies it into `extlinux.conf` as `root=` |
-| **deb_repo / deb_release** | `GhfunNiHe/marble-deb-package` / `latest` | Where the device debs come from (`latest` = newest release) |
+| **deb_repo / deb_release** | `GhfunNiHe/marble-deb-packages` / `latest` | Where the device debs come from (`latest` = newest release) |
 | **extra_deb_urls** | *(empty)* | Extra `.deb` URLs, one per line (optional) |
 | **extra_packages** | *(empty)* | Extra packages appended to the base set, space separated (optional) |
 | **android_boot_entry** | `true` | Write `extras/others.env` to `esp:/extlinux/others.env` so U-Boot's menu offers "Other systems..." (i.e. boot Android from U-Boot) |
@@ -70,7 +70,7 @@ not), so writing them would make Android the default entry on every single boot.
 
 ## Components and patch provenance
 
-All device debs are built by [marble-deb-package](https://github.com/GhfunNiHe/marble-deb-package). The table
+All device debs are built by [marble-deb-packages](https://github.com/GhfunNiHe/marble-deb-packages). The table
 below lists each package's upstream origin and where the patches it carries come from:
 
 | Package | Upstream (fetched at build time) | Patches / local changes |
@@ -94,7 +94,7 @@ rights stay with the respective owners:
 |---|---|---|
 | `.github/workflows/rootfs-debian.yml` | this repository | not declared |
 | `extras/others.env` | this project's U-Boot boot-menu convention (paired with `others_next`/`others_menu` in [u-boot-marble](https://github.com/iLtanaka/u-boot-marble)) | follows upstream |
-| All device `.deb` packages | releases of [GhfunNiHe/marble-deb-package](https://github.com/GhfunNiHe/marble-deb-package) | see each package's `debian/copyright` |
+| All device `.deb` packages | releases of [GhfunNiHe/marble-deb-packages](https://github.com/GhfunNiHe/marble-deb-packages) | see each package's `debian/copyright` |
 | `libva-v4l2` (VA-API backend) | [radxa-pkg/libva-v4l2](https://github.com/radxa-pkg/libva-v4l2) (originally forked from strongtz/libva-v4l2) | MIT |
 | Kernel, drivers and the patches above | their upstreams, per the table | GPL-2.0-only and others, follows upstream |
 | Firmware blobs | Qualcomm / Xiaomi (device-redistributable only) | proprietary, for running Linux on your own device |

@@ -6,7 +6,7 @@
 
 本仓库用 **GitHub Actions** 为 **小米 POCO F5 / Redmi Note 12 Turbo（marble / 高通 SM7475）** 组装 **Debian arm64** 的 rootfs 与 ESP 镜像，产物是 Android sparse 镜像（`.simg.xz`），解压后可直接用 `fastboot` 刷入设备对应分区。
 
-本仓库**只做组装**，不含任何设备源码：所有设备 `.deb`（内核、设备支持层、ModemManager、libqmi、libssc、iio-sensor-proxy-ssc、libva-v4l2、固件）都取自 [GhfunNiHe/marble-deb-package](https://github.com/GhfunNiHe/marble-deb-package) 发布的 release。
+本仓库**只做组装**，不含任何设备源码：所有设备 `.deb`（内核、设备支持层、ModemManager、libqmi、libssc、iio-sensor-proxy-ssc、libva-v4l2、固件）都取自 [GhfunNiHe/marble-deb-packages](https://github.com/GhfunNiHe/marble-deb-packages) 发布的 release。
 系统**不使用 initramfs**，由 U-Boot 直接启动内核。
 
 ## 使用方法
@@ -27,7 +27,7 @@
 | **image_size** | `10G` | rootfs 镜像初始大小；`fstab` 带 `x-systemd.growfs`，首次启动自动扩到分区实际大小 |
 | **esp_size** | `128M` | ESP 镜像大小（marble 的 esp 分区是 128M，别超过） |
 | **root_partition** | `linux` | rootfs 所在 GPT 分区标签；会写进 `fstab`，内核包的 postinst 再据此改写 `extlinux.conf` 的 `root=` |
-| **deb_repo / deb_release** | `GhfunNiHe/marble-deb-package` / `latest` | 设备 deb 的来源仓库与 release 标签（`latest` = 最新） |
+| **deb_repo / deb_release** | `GhfunNiHe/marble-deb-packages` / `latest` | 设备 deb 的来源仓库与 release 标签（`latest` = 最新） |
 | **extra_deb_urls** | *(空)* | 额外 deb 的直链，一行一个（可选） |
 | **extra_packages** | *(空)* | 追加进基础包集的包名，空格分隔（可选） |
 | **android_boot_entry** | `true` | 是否把 `extras/others.env` 写到 `esp:/extlinux/others.env`，让 U-Boot 菜单出现「Other systems...」（可从 U-Boot 启动 Android） |
@@ -65,7 +65,7 @@ Android（slot a）或回到 Debian，不必用 fastboot 切槽。
 
 ## 组件与补丁来源
 
-所有设备 deb 由 [marble-deb-package](https://github.com/GhfunNiHe/marble-deb-package) 构建，
+所有设备 deb 由 [marble-deb-packages](https://github.com/GhfunNiHe/marble-deb-packages) 构建，
 下表列出每个包的上游来源与其携带的补丁出处：
 
 | 包 | 上游来源（构建时拉取） | 补丁 / 本地改动 |
@@ -88,7 +88,7 @@ Android（slot a）或回到 Debian，不必用 fastboot 切槽。
 |---|---|---|
 | `.github/workflows/rootfs-debian.yml` | 本仓库 | 未声明 |
 | `extras/others.env` | 本项目的 U-Boot 启动菜单约定（配合 [u-boot-marble](https://github.com/iLtanaka/u-boot-marble) 的 `others_next`/`others_menu`） | 随上游 |
-| 全部设备 `.deb` | [GhfunNiHe/marble-deb-package](https://github.com/GhfunNiHe/marble-deb-package) 的 release | 见各包 `debian/copyright` |
+| 全部设备 `.deb` | [GhfunNiHe/marble-deb-packages](https://github.com/GhfunNiHe/marble-deb-packages) 的 release | 见各包 `debian/copyright` |
 | `libva-v4l2`（VA-API 后端） | [radxa-pkg/libva-v4l2](https://github.com/radxa-pkg/libva-v4l2)（原 fork 为 strongtz/libva-v4l2） | MIT |
 | 内核、驱动与上表补丁 | 见上表各自上游 | GPL-2.0-only 等，随各自上游 |
 | 固件 blob | 高通 / 小米（仅随设备分发） | 专有，仅用于在自有设备上运行 Linux |
