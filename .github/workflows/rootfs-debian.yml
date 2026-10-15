@@ -56,11 +56,6 @@ on:
         type: string
         default: 'marble-debian'
 
-      password:
-        description: 'Image password for the user and root (default: password; leave empty to use the ROOTFS_PASSWORD secret)'
-        type: string
-        default: 'password'
-
       language:
         description: 'System language'
         type: choice
@@ -457,24 +452,20 @@ jobs:
 
       - name: "Set Passwords"
         env:
-          INPUT_PASSWORD: ${{ inputs.password }}
           ROOTFS_PASSWORD: ${{ secrets.ROOTFS_PASSWORD }}
         run: |
           set -euo pipefail
-          # Precedence: the password input (default 'password') wins, so the
-          # image password is deterministic; leaving the input empty falls back
-          # to the ROOTFS_PASSWORD secret, and to 'password' when neither is set.
-          if [ -n "${INPUT_PASSWORD:-}" ]; then
-            PASS="$INPUT_PASSWORD"
-          elif [ -n "${ROOTFS_PASSWORD:-}" ]; then
-            PASS="$ROOTFS_PASSWORD"
+          # The image password comes from the repository secret only: a
+          # workflow_dispatch input would show up in the run's input summary,
+          # which is exactly where a password must not be.
+          if [ -z "${ROOTFS_PASSWORD:-}" ]; then
+            ROOTFS_PASSWORD="password"
+            echo "::warning::ROOTFS_PASSWORD secret not set, falling back to the insecure default 'password'"
           else
-            PASS="password"
-            echo "::warning::no password input and no ROOTFS_PASSWORD secret, falling back to the insecure default 'password'"
+            echo "::add-mask::$ROOTFS_PASSWORD"
           fi
-          echo "::add-mask::$PASS"
-          printf '%s:%s\n' "${{ inputs.username }}" "$PASS" | sudo chroot "$ROOTFS_MOUNT" chpasswd
-          printf 'root:%s\n' "$PASS" | sudo chroot "$ROOTFS_MOUNT" chpasswd
+          printf '%s:%s\n' "${{ inputs.username }}" "$ROOTFS_PASSWORD" | sudo chroot "$ROOTFS_MOUNT" chpasswd
+          printf 'root:%s\n' "$ROOTFS_PASSWORD" | sudo chroot "$ROOTFS_MOUNT" chpasswd
           echo "✓ Passwords set for ${{ inputs.username }} and root"
 
       # ----------------------------------------------------------------
