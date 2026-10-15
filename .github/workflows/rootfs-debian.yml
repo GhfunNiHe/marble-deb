@@ -16,7 +16,7 @@
 #   -> root=PARTLABEL=linux (no initramfs).
 # ============================================================================
 
-name: Build RootFS
+name: Build Debian RootFS
 
 on:
   workflow_dispatch:
@@ -27,6 +27,7 @@ on:
         options:
           - trixie
           - forky
+          - sid
         default: 'trixie'
 
       desktop:
@@ -123,7 +124,7 @@ env:
 jobs:
   build-rootfs:
     name: "Assemble RootFS"
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-latest-arm
     timeout-minutes: 120
 
     steps:
