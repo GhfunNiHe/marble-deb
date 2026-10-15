@@ -443,14 +443,20 @@ jobs:
       - name: "Create User"
         run: |
           set -euo pipefail
-          GROUPS="sudo"
-          for g in audio video render input netdev plugdev; do
+          # Do NOT call this variable GROUPS: bash treats GROUPS as a special
+          # variable holding the shell's own supplementary group IDs, so an
+          # assignment to it is ineffective and it reads back as bare numbers
+          # ("1001" on the runner), which made useradd fail with
+          # "group '1001' does not exist".
+          user_groups=""
+          for g in sudo audio video render input netdev plugdev; do
             if sudo chroot "$ROOTFS_MOUNT" getent group "$g" >/dev/null; then
-              GROUPS="$GROUPS,$g"
+              user_groups="${user_groups:+$user_groups,}$g"
             fi
           done
-          echo "  groups: $GROUPS"
-          sudo chroot "$ROOTFS_MOUNT" useradd -m -s /bin/bash -G "$GROUPS" "${{ inputs.username }}"
+          test -n "$user_groups" || { echo "::error::no supplementary group exists in the rootfs"; exit 1; }
+          echo "  groups: $user_groups"
+          sudo chroot "$ROOTFS_MOUNT" useradd -m -s /bin/bash -G "$user_groups" "${{ inputs.username }}"
           echo "✓ User ${{ inputs.username }} created"
 
       - name: "Set Passwords"
