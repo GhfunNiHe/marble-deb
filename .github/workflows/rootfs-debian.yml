@@ -597,37 +597,44 @@ jobs:
       - name: "Enable Services"
         run: |
           set -euo pipefail
-          sudo chroot "$ROOTFS_MOUNT" bash -c '
-            set -u
-            enable() {
-              if [ -e "/usr/lib/systemd/system/$1" ] || [ -e "/etc/systemd/system/$1" ]; then
-                systemctl enable "$1" >/dev/null 2>&1 && echo "  enabled $1" || echo "  FAILED $1"
-              else
-                echo "  skip $1 (no unit)"
-              fi
-            }
-            enable NetworkManager.service
-            enable ssh.service
-            # Sensors: hexagonrpcd (Debian, source package hexagonrpc) serves the
-            # DSP side, libssc + iio-sensor-proxy-ssc turn it into D-Bus. Both
-            # names are the Debian ones; marble-device-support drops in on
-            # hexagonrpcd.service to point the daemon at the SLPI and at the
-            # /usr/share/qcom registry that firmware-redmi-marble installs.
-            enable iio-sensor-proxy.service
-            enable hexagonrpcd.service
-            # marble-mac-restore.service (marble-device-support >= 1.0.0-5)
-            # restores both radios from persist: copies wlan_mac.bin into the
-            # firmware dir and loads ath11k_pci (WLAN), then programs the
-            # derived Bluetooth address through btmgmt (BT). Replaces the
-            # 1.0.0-3/1.0.0-4 pair marble-wlan-mac + marble-bt-mac; the unit
-            # is already enabled by the deb's dh_installsystemd postinst, this
-            # is a belt-and-braces explicit enable.
-            enable marble-mac-restore.service
-            enable marble-panel-on.service
-            enable marble-compositor-boost.service
-            enable marble-hardware-tuning.service
-            enable marble-touchboost.service
-          '
+          # The script goes in through a quoted heredoc, not `bash -c '...'`:
+          # these comments contain apostrophes ("the deb's postinst"), and one
+          # of them closes a single-quoted script mid-line, which silently runs
+          # the remaining `enable ...` lines in the runner's own shell. There
+          # `enable` is the bash builtin for builtins, so the step died with
+          # "enable: marble-mac-restore.service: not a shell builtin".
+          # 'CHROOT_EOF' keeps the heredoc literal, so no escaping is needed.
+          sudo chroot "$ROOTFS_MOUNT" bash -s <<'CHROOT_EOF'
+          set -u
+          enable() {
+            if [ -e "/usr/lib/systemd/system/$1" ] || [ -e "/etc/systemd/system/$1" ]; then
+              systemctl enable "$1" >/dev/null 2>&1 && echo "  enabled $1" || echo "  FAILED $1"
+            else
+              echo "  skip $1 (no unit)"
+            fi
+          }
+          enable NetworkManager.service
+          enable ssh.service
+          # Sensors: hexagonrpcd (Debian, source package hexagonrpc) serves the
+          # DSP side, libssc + iio-sensor-proxy-ssc turn it into D-Bus. Both
+          # names are the Debian ones; marble-device-support drops in on
+          # hexagonrpcd.service to point the daemon at the SLPI and at the
+          # /usr/share/qcom registry that firmware-redmi-marble installs.
+          enable iio-sensor-proxy.service
+          enable hexagonrpcd.service
+          # marble-mac-restore.service (marble-device-support >= 1.0.0-5)
+          # restores both radios from persist: copies wlan_mac.bin into the
+          # firmware dir and loads ath11k_pci (WLAN), then programs the
+          # derived Bluetooth address through btmgmt (BT). Replaces the
+          # 1.0.0-3/1.0.0-4 pair marble-wlan-mac + marble-bt-mac; the unit
+          # is already enabled by the deb's dh_installsystemd postinst, this
+          # is a belt-and-braces explicit enable.
+          enable marble-mac-restore.service
+          enable marble-panel-on.service
+          enable marble-compositor-boost.service
+          enable marble-hardware-tuning.service
+          enable marble-touchboost.service
+          CHROOT_EOF
           echo "✓ Services enabled"
 
       - name: "Fix Permissions"
