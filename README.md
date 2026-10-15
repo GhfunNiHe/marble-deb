@@ -4,7 +4,7 @@
 
 > English version: [README.en.md](README.en.md)
 
-本仓库用 **GitHub Actions** 为**小米 POCO F5 / Redmi Note 12 Turbo（marble / 高通 SM7475）**组装 **Debian arm64** 的 rootfs 与 ESP 镜像，产物是 Android sparse 镜像（`.simg.xz`），解压后可直接用 `fastboot` 刷入设备对应分区。
+本仓库用 **GitHub Actions** 为 **小米 POCO F5 / Redmi Note 12 Turbo（marble / 高通 SM7475）** 组装 **Debian arm64** 的 rootfs 与 ESP 镜像，产物是 Android sparse 镜像（`.simg.xz`），解压后可直接用 `fastboot` 刷入设备对应分区。
 
 本仓库**只做组装**，不含任何设备源码：所有设备 `.deb`（内核、设备支持层、ModemManager、libqmi、libssc、iio-sensor-proxy-ssc、固件）都取自 [GhfunNiHe/marble-deb-package](https://github.com/GhfunNiHe/marble-deb-package) 发布的 release。
 系统**不使用 initramfs**，由 U-Boot 直接启动内核。
