@@ -66,17 +66,17 @@ Android（slot a）或回到 Debian，不必用 fastboot 切槽。
 ## 组件与补丁来源
 
 所有设备 deb 由 [marble-deb-packages](https://github.com/GhfunNiHe/marble-deb-packages) 构建，
-下表列出每个包的上游来源与其携带的补丁出处：
+下表只列上游来源与补丁清单，每个补丁的来源写在对应包的 changelog 里：
 
 | 包 | 上游来源（构建时拉取） | 补丁 / 本地改动 |
 |---|---|---|
-| `linux-redmi-marble` | [iLtanaka/linux-marble](https://github.com/iLtanaka/linux-marble) `main` | `ath11k-load-wlan-mac-from-firmware.patch`：ath11k 走 PCIe、没有 `local-mac-address`、固件里也没有 MAC，导致每次开机随机 MAC；补丁在 DT 与固件 MAC 均为 0 时加载 `ath11k/WCN6855/hw2.1/wlan_mac.bin`。`iris-decode-order-output.patch`：在 HFI gen2 解码器能力表上暴露标准的 display-delay 控件，并按需转发 `HFI_PROP_DECODE_ORDER_OUTPUT`；没有它，libva-v4l2 后端会在解码器构造时以 “S_CTRL DISPLAY_DELAY (Iris decode-order patch required): Invalid argument” 中止，VA-API 应用静默退回软解。两个补丁都由内核包自己在 `debian/rules` 的 configure 阶段应用 `debian/patches/series`（本地 `dpkg-buildpackage` 与 CI 行为一致，打不上会直接构建失败）。 |
-| `marble-device-support` | [iLtanaka/marble-device-support](https://github.com/iLtanaka/marble-device-support)（git clone） | `debian/` 覆盖层：hexagonrpcd 固件根适配、`marble-mac-restore.service`（写 WLAN MAC，并用 MAC−1 的最后一位配置 BT 地址）、只读的 NM `ct-data` 配置、ath11k_pci 黑名单；两个 systemd drop-in 让传感器链能自愈（hexagonrpcd 在 SLPI 崩溃后 `Restart=always`，iio-sensor-proxy 在其后端消失时会段错误、故补 `Restart=on-failure`）；以及 IMS/SMS 使能件 `marble-imsctl` + `marble-ims-enable.service`（经 QMI IMSS 下发「Set IMS Services Enabled」，配合 `Recommends: 81voltd`）。 |
-| `modemmanager` | [freedesktop ModemManager](https://gitlab.freedesktop.org/mobile-broadband/ModemManager) @ `98777e6` | `0002`：在 LOC 启动时解锁 AFW 门控的 GNSS 引擎（否则 QMI error 46，GPS 起不来）；`0003`：由 Position Report 合成 NMEA；`0004`：netlink use-after-free 修复的回移（上游 `9317cbc4`）。`3.0 (quilt)`，补丁由 `debian/patches/series` 自动应用。 |
-| `libqmi` | [freedesktop libqmi](https://gitlab.freedesktop.org/mobile-broadband/libqmi) @ `d9e8af5`（1.39.1-dev） | 无本地补丁：该 commit 本身已带 QMI_LOC 客户端标识 TLV（上游 MR !470），AFW 门控的 GNSS 引擎需要它，而 trixie 自带的 1.38.0 没有。 |
-| `libssc` | [DylanVanAssche/libssc](https://codeberg.org/DylanVanAssche/libssc)（tag 由 changelog 决定） | `wait-for-qmi-service.patch`（等 QMI 服务就绪）。此前的 `0002-libssc-light-four-element.patch` 已移除：marble 的光照传感器固件报告本身无效（末尾四个 0 字节被 protobuf-c 判为非法 tag，且三路强度恒为 0），留着只会造成「ALS 可用」的假象；加速度计、陀螺仪、指南针与接近传感器不受影响。 |
-| `libva-v4l2` | [radxa-pkg/libva-v4l2](https://github.com/radxa-pkg/libva-v4l2) @ `0e4ce1e0` | 无本地补丁；meson 构建时 `-Dfastcv=disabled`，附带 `msm_drv_video.so` 别名与 GStreamer VA 环境覆盖（`/usr/lib/environment.d`、`/etc/profile.d`）。Debian 只带 Intel/Mesa 的 VA 驱动，没有它就等于浏览器/ffmpeg 无硬解路径；配合上面的 iris decode-order 补丁，marble 上 H.264/HEVC/VP9 1080p 已实测经 `/dev/video0` 解码。 |
-| `iio-sensor-proxy-ssc` | [hadess/iio-sensor-proxy](https://gitlab.freedesktop.org/hadess/iio-sensor-proxy) 3.9 | 无本地补丁：编译时打开 `-Dssc-support`，配合 libssc 走 SSC/SLPI 传感器链。 |
+| `linux-redmi-marble` | [iLtanaka/linux-marble](https://github.com/iLtanaka/linux-marble) `main` | `ath11k-load-wlan-mac-from-firmware.patch`：没有别的 MAC 来源时读固件 `wlan_mac.bin`（否则每次开机随机 MAC）。`iris-decode-order-output.patch`：暴露 display-delay 控件并转发 `HFI_PROP_DECODE_ORDER_OUTPUT`，libva-v4l2 依赖它。两个补丁都由包内 `debian/rules` 按 `series` 应用，打不上即构建失败。 |
+| `marble-device-support` | [iLtanaka/marble-device-support](https://github.com/iLtanaka/marble-device-support)（git clone） | `debian/` 覆盖层：hexagonrpcd 固件根适配、`marble-mac-restore.service`（WLAN MAC + BT 地址取 MAC−1）、只读 NM `ct-data` 配置、ath11k_pci 黑名单、SLPI 崩溃后重拉 hexagonrpcd 的传感器自愈单元（iio-sensor-proxy 随其 `PartOf` 重启）、IMS 使能件 `marble-imsctl` + `marble-ims-enable.service`（配合 `Recommends: 81voltd`）。 |
+| `modemmanager` | [freedesktop ModemManager](https://gitlab.freedesktop.org/mobile-broadband/ModemManager) @ `98777e6` | `0002`：LOC 启动时解锁 AFW 门控 GNSS（否则 QMI error 46）；`0003`：由 Position Report 合成 NMEA；`0004`：netlink use-after-free 回移（上游 `9317cbc4`）。`3.0 (quilt)`，`series` 自动应用。 |
+| `libqmi` | [freedesktop libqmi](https://gitlab.freedesktop.org/mobile-broadband/libqmi) @ `d9e8af5`（1.39.1-dev） | 无本地补丁：该 commit 自带 QMI_LOC 客户端标识 TLV（上游 MR !470），trixie 的 1.38.0 没有。 |
+| `libssc` | [DylanVanAssche/libssc](https://codeberg.org/DylanVanAssche/libssc)（tag 由 changelog 决定，当前 0.4.4） | `wait-for-qmi-service.patch`：等 QRTR 上出现 SSC 服务（DSP 发布得晚，rootfs 也没有 initramfs 可排序）；`0002-libssc-light-four-element.patch`：marble 的 lux 在强度数组 `[1]`，上游读 `[0]` 恒 0；`0003-libssc-light-trim-padding.patch`：去掉占位报文尾部零填充后再解包。实测 0.4.4-4 读数正常（亮环境 ≈200 lux）。 |
+| `libva-v4l2` | [radxa-pkg/libva-v4l2](https://github.com/radxa-pkg/libva-v4l2) @ `0e4ce1e0` | 无本地补丁；meson `-Dfastcv=disabled`，附 `msm_drv_video.so` 别名与 GStreamer VA 环境变量。补上 Debian 缺的 VA 驱动，配合 iris 补丁可硬解 H.264/HEVC/VP9。 |
+| `iio-sensor-proxy-ssc` | [hadess/iio-sensor-proxy](https://gitlab.freedesktop.org/hadess/iio-sensor-proxy) 3.9 | 无本地补丁：`-Dssc-support` 接 libssc 的 SSC/SLPI 链。遗留：自带 udev 规则给所有 `fastrpc-*` 打 `ssc-light`，代理可能落到 ADSP，桌面 `LightLevel` 恒 0；光照又是 on-change，初值只在使能时上报一次。 |
 | `firmware-redmi-marble` | [iLtanaka/firmware-xiaomi-marble](https://github.com/iLtanaka/firmware-xiaomi-marble) `v20261008-2` | 无补丁：ADSP、SLPI、modem、Adreno、IPA、WCN6855 Wi-Fi/BT、传感器注册表等闭源 blob。 |
 
 ## 许可与第三方组件
