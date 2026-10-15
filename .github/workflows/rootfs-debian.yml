@@ -148,10 +148,19 @@ jobs:
             echo "::error::esp_size must look like 128M / 1G"
             exit 1
           fi
-          case "${{ inputs.esp_size }}" in
-            *G|*g|*[5-9][0-9][0-9]M) : ;;
-            *) echo "::warning::esp_size may not fit an existing 128M 'esp' partition" ;;
+          # marble's esp partition is 128M, so anything larger simply cannot be
+          # flashed into it. Compare sizes instead of pattern-matching the
+          # string: the previous case-statement warned on the correct 128M
+          # default and stayed silent for a 1G image.
+          esp_size="${{ inputs.esp_size }}"
+          case "$esp_size" in
+            *[Gg]) esp_mib=$(( ${esp_size%[Gg]} * 1024 )) ;;
+            *[Mm]) esp_mib=${esp_size%[Mm]} ;;
+            *)     esp_mib=$(( esp_size / 1048576 )) ;;
           esac
+          if [ "$esp_mib" -gt 128 ]; then
+            echo "::warning::esp_size=$esp_size exceeds marble's 128M esp partition"
+          fi
           echo "✓ Arguments verified"
 
       - name: "Install Build Tools"
