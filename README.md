@@ -4,7 +4,7 @@
 
 > English version: [README.en.md](README.en.md)
 
-本仓库用 **GitHub Actions** 为 **小米 POCO F5 / Redmi Note 12 Turbo（marble / 高通 SM7475）** 组装 **Debian arm64** 的 rootfs 与 ESP 镜像，产物是 Android sparse 镜像（`.simg.xz`），解压后可直接用 `fastboot` 刷入设备对应分区。
+本仓库用 **GitHub Actions** 为 **小米 POCO F5 / Redmi Note 12 Turbo（marble / 高通 SM7475）** 组装 **deb 系发行版（Debian / Ubuntu / …）arm64** 的 rootfs 与 ESP 镜像，产物是 Android sparse 镜像（`.simg.xz`），解压后可直接用 `fastboot` 刷入设备对应分区。
 
 本仓库**只做组装**，不含任何设备源码：所有设备 `.deb`（内核、设备支持层、ModemManager、libqmi、libssc、iio-sensor-proxy-ssc、libva-v4l2、固件）都取自 [GhfunNiHe/marble-deb-packages](https://github.com/GhfunNiHe/marble-deb-packages) 发布的 release。
 系统**不使用 initramfs**，由 U-Boot 直接启动内核。
@@ -19,7 +19,7 @@
 
 | 参数 | 默认值 | 说明 |
 |---|---|---|
-| **distro_suite** | `trixie` | Debian 版本，可选 `trixie` / `forky` / `sid` |
+| **distro_suite** | `trixie` | 发行版 suite 代号；目前是 Debian 的 `trixie` / `forky` / `sid`（后续可加 Ubuntu 等 deb 系） |
 | **desktop** | `Phosh` | 桌面环境：`Phosh` / `KDE Plasma Mobile` / `KDE Plasma` / `GNOME` / `server`（无图形界面） |
 | **autologin** | `true` | 自动登录：Phosh/GNOME 写 `/etc/gdm3/daemon.conf`（Phosh 时另写 AccountsService 的 `Session=phosh`）；Plasma / Plasma Mobile 写 `/etc/sddm.conf.d/autologin.conf` |
 | **username / hostname** | `Redmi` / `marble-debian` | 用户名与主机名（用户会加入 sudo + audio/video/render/input/netdev/plugdev） |
@@ -33,6 +33,8 @@
 | **android_boot_entry** | `true` | 是否把 `extras/others.env` 写到 `esp:/extlinux/others.env`，让 U-Boot 菜单出现「Other systems...」（可从 U-Boot 启动 Android） |
 
 口令**不是**输入项：镜像里普通用户与 root 的初始口令只从仓库 Secret `ROOTFS_PASSWORD` 取（未设置时回落到 `password` 并给出 warning），这样口令不会出现在 `workflow_dispatch` 的输入摘要里。
+
+> 设备还没分区（首次安装）？先在 TWRP 里按 [PARTITIONING.md](PARTITIONING.md) 划出 `esp` 和 `linux` 分区，再回来刷下面的镜像。（那一页里有一段提示词，可以直接丢给 AI 助手代你操作。）
 
 ## 产物与刷机
 
@@ -57,7 +59,7 @@ fastboot flash esp   esp.simg
 这个文件是 U-Boot 启动菜单里「Other systems...」子菜单的数据源（见
 [u-boot-marble](https://github.com/iLtanaka/u-boot-marble) 的 `board/qualcomm/xiaomi-marble.env`，
 `preboot` 里的 `others_next` 与 `bootmenu_1` 的 `others_menu`），打开后可以从 U-Boot 直接启动
-Android（slot a）或回到 Debian，不必用 fastboot 切槽。
+Android（slot a）或回到 Linux，不必用 fastboot 切槽。
 
 文件里**刻意不写** `next_title` / `next_boot`：那是「一次性默认项」机制，需要被启动的系统自行清除
 （上游项目用 `marble-oneshot-clear.service`，Debian 没有这个服务），一旦写入，Android 就会变成每次开机
