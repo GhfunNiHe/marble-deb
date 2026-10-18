@@ -22,7 +22,7 @@ on:
   workflow_dispatch:
     inputs:
       distro_suite:
-        description: 'Debian Version'
+        description: 'Debian 版本 / Debian version'
         type: choice
         options:
           - trixie
@@ -31,7 +31,7 @@ on:
         default: 'trixie'
 
       desktop:
-        description: 'Desktop Environment (server = no DE)'
+        description: '桌面环境（server = 无桌面） / Desktop environment (server = no DE)'
         type: choice
         options:
           - Phosh
@@ -42,22 +42,22 @@ on:
         default: 'Phosh'
 
       autologin:
-        description: 'Autologin'
+        description: '自动登录 / Autologin'
         type: boolean
         default: true
 
       username:
-        description: 'Username'
+        description: '用户名 / Username'
         type: string
         default: 'Redmi'
 
       hostname:
-        description: 'Hostname'
+        description: '主机名 / Hostname'
         type: string
         default: 'marble-debian'
 
       language:
-        description: 'System language'
+        description: '系统语言 / System language'
         type: choice
         options:
           - 'None (C.UTF-8)'
@@ -73,42 +73,42 @@ on:
         default: 'None (C.UTF-8)'
 
       image_size:
-        description: 'rootfs.img size (grown to the real partition on first boot)'
+        description: 'rootfs.img 大小（首次启动时扩展到实际分区） / rootfs.img size (grown to the real partition on first boot)'
         type: string
         default: '10G'
 
       esp_size:
-        description: 'esp.img size (must fit the esp partition; marble P34 = 128M)'
+        description: 'esp.img 大小（须适配 ESP 分区；marble P34 = 128M） / esp.img size (must fit the ESP partition; marble P34 = 128M)'
         type: string
         default: '128M'
 
       root_partition:
-        description: 'GPT partition label the rootfs boots from. Goes into /etc/fstab; the kernel postinst copies it into extlinux.conf root='
+        description: 'rootfs 启动所用的 GPT 分区标签（写入 fstab 与 extlinux.conf） / Rootfs boot partition label (fstab + extlinux.conf)'
         type: string
         default: 'linux'
 
       deb_repo:
-        description: 'Repository that publishes the device .debs'
+        description: '发布设备 .deb 的仓库 / Repository that publishes the device .debs'
         type: string
         default: 'GhfunNiHe/marble-deb-packages'
 
       deb_release:
-        description: 'Release tag to pull .debs from ("latest" = newest release)'
+        description: '拉取 .deb 的 Release 标签（"latest" = 最新版本） / Release tag to pull .debs from ("latest" = newest release)'
         type: string
         default: 'latest'
 
       extra_deb_urls:
-        description: 'Extra .deb URLs, one per line (optional)'
+        description: '额外 .deb 链接，每行一个（可选） / Extra .deb URLs, one per line (optional)'
         type: string
         default: ''
 
       android_boot_entry:
-        description: 'Write esp:/extlinux/others.env so U-Boot offers an Android boot entry'
+        description: '写入 others.env，使 U-Boot 提供 Android 启动项 / Write others.env so U-Boot offers an Android boot entry'
         type: boolean
         default: true
 
       extra_packages:
-        description: 'Extra packages appended to the base set (optional, space separated)'
+        description: '追加到基础包集的额外软件包，空格分隔（可选） / Extra packages appended to the base set (optional, space separated)'
         type: string
         default: ''
 

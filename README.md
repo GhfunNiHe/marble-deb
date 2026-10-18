@@ -4,100 +4,228 @@
 
 > English version: [README.en.md](README.en.md)
 
-本仓库用 **GitHub Actions** 为 **小米 POCO F5 / Redmi Note 12 Turbo（marble / 高通 SM7475）** 组装 **deb 系发行版（Debian / Ubuntu / …）arm64** 的 rootfs 与 ESP 镜像，产物是 Android sparse 镜像（`.simg.xz`），解压后可直接用 `fastboot` 刷入设备对应分区。
+> **项目状态**
+>
+> 本项目仍在持续开发中，部分功能可能尚未完善，构建产物可能存在未知问题。
+>
+> 如果遇到问题，欢迎提交 [Issue](https://github.com/GhfunNiHe/marble-deb-build/issues)。
 
-本仓库**只做组装**，不含任何设备源码：所有设备 `.deb`（内核、设备支持层、ModemManager、libqmi、libssc、iio-sensor-proxy-ssc、libva-v4l2、固件）都取自 [GhfunNiHe/marble-deb-packages](https://github.com/GhfunNiHe/marble-deb-packages) 发布的 release。
-系统**不使用 initramfs**，由 U-Boot 直接启动内核。
+---
 
-## 使用方法
+## 项目简介
 
-1. Fork 本仓库（或在任意仓库里启用 Actions）。
-2. 进入 `Actions` → `Build Debian RootFS` → `Run workflow`，按需填写参数（见下表）。
-3. 构建完成后，在本次运行的 `Artifacts` 中下载 `rootfs-<suite>-<desktop>` 与 `esp-<suite>-<desktop>`。
+本项目使用 **GitHub Actions**，为 **小米 POCO F5 / Redmi Note 12 Turbo（marble，高通 SM7475）** 组装 **Debian arm64** 的 rootfs 与 ESP 镜像。
 
-## 参数说明
+仓库只负责组装系统镜像，不包含设备源码。内核、设备支持层、网络与传感器组件、固件等全部以 `.deb` 形式从 [GhfunNiHe/marble-deb-packages](https://github.com/GhfunNiHe/marble-deb-packages) 的 Release 获取。
 
-| 参数 | 默认值 | 说明 |
-|---|---|---|
-| **distro_suite** | `trixie` | 发行版 suite 代号；目前是 Debian 的 `trixie` / `forky` / `sid`（后续可加 Ubuntu 等 deb 系） |
-| **desktop** | `Phosh` | 桌面环境：`Phosh` / `KDE Plasma Mobile` / `KDE Plasma` / `GNOME` / `server`（无图形界面） |
-| **autologin** | `true` | 自动登录：Phosh/GNOME 写 `/etc/gdm3/daemon.conf`（Phosh 时另写 AccountsService 的 `Session=phosh`）；Plasma / Plasma Mobile 写 `/etc/sddm.conf.d/autologin.conf` |
-| **username / hostname** | `Redmi` / `marble-debian` | 用户名与主机名（用户会加入 sudo + audio/video/render/input/netdev/plugdev） |
-| **language** | `None (C.UTF-8)` | 10 种可选；选定后生成该 locale 并写入系统配置 |
-| **image_size** | `10G` | rootfs 镜像初始大小；`fstab` 带 `x-systemd.growfs`，首次启动自动扩到分区实际大小 |
-| **esp_size** | `128M` | ESP 镜像大小（marble 的 esp 分区是 128M，别超过） |
-| **root_partition** | `linux` | rootfs 所在 GPT 分区标签；会写进 `fstab`，内核包的 postinst 再据此改写 `extlinux.conf` 的 `root=` |
-| **deb_repo / deb_release** | `GhfunNiHe/marble-deb-packages` / `latest` | 设备 deb 的来源仓库与 release 标签（`latest` = 最新） |
-| **extra_deb_urls** | *(空)* | 额外 deb 的直链，一行一个（可选） |
-| **extra_packages** | *(空)* | 追加进基础包集的包名，空格分隔（可选） |
-| **android_boot_entry** | `true` | 是否把 `extras/others.env` 写到 `esp:/extlinux/others.env`，让 U-Boot 菜单出现「Other systems...」（可从 U-Boot 启动 Android） |
+构建完成后会生成 Android sparse 镜像：
 
-口令**不是**输入项：镜像里普通用户与 root 的初始口令只从仓库 Secret `ROOTFS_PASSWORD` 取（未设置时回落到 `password` 并给出 warning），这样口令不会出现在 `workflow_dispatch` 的输入摘要里。
+- `rootfs.simg.xz`：ext4 rootfs；
+- `esp.simg.xz`：FAT ESP，包含内核、DTB 与 U-Boot 启动配置。
 
-> 设备还没分区（首次安装）？先在 TWRP 里按 [PARTITIONING.md](PARTITIONING.md) 划出 `esp` 和 `linux` 分区，再回来刷下面的镜像。（那一页里有一段提示词，可以直接丢给 AI 助手代你操作。）
+系统不使用 initramfs，由 U-Boot 直接启动内核。
 
-## 产物与刷机
+---
 
-```sh
-xz -d rootfs.simg.xz esp.simg.xz
-fastboot flash linux rootfs.simg
-fastboot flash esp   esp.simg
+## 快速开始
+
+### 1. Fork 并启用 Actions
+
+点击仓库右上角的 **Fork**，将项目复制到自己的 GitHub 账号。
+
+进入 Fork 后仓库的 **Actions** 页面。如果 GitHub 提示需要启用工作流，点击
+`I understand my workflows, go ahead and enable them`。
+
+### 2. 运行构建
+
+在左侧选择 **Build Debian RootFS**，点击右侧的 **Run workflow**。
+
+展开后可以调整构建参数，具体说明见[高级配置](#高级配置)。如果全部保持默认，将构建：
+
+- Debian `trixie`；
+- Phosh 桌面；
+- 用户名 `Redmi`；
+- 主机名 `marble-debian`；
+- 10 GiB rootfs 与 128 MiB ESP。
+
+确认参数后，点击绿色的 **Run workflow** 开始构建。
+
+### 3. 下载产物
+
+构建完成后，打开本次运行的摘要页面，在 **Artifacts** 区域下载：
+
+- `rootfs-<suite>-<desktop>`
+- `esp-<suite>-<desktop>`
+
+rootfs 产物中还包含 `SHA256SUMS`，可以在刷机前校验镜像完整性。
+
+---
+
+## 高级配置
+
+通过 `workflow_dispatch` 手动运行 **Build Debian RootFS** 时，可以使用以下参数：
+
+| 参数 | 说明 | 可选值 | 默认值 |
+|---|---|---|---|
+| **distro_suite** | 要安装的 Debian 版本。`trixie` 为 Debian 13，`forky` 为 Debian 14，`sid` 为滚动开发版。 | `trixie` / `forky` / `sid` | `trixie` |
+| **desktop** | 预装的桌面环境。选择 `server` 时不安装图形界面。 | `Phosh` / `KDE Plasma Mobile` / `KDE Plasma` / `GNOME` / `server` | `Phosh` |
+| **autologin** | 是否自动登录创建的用户。Phosh 与 GNOME 使用 GDM，KDE Plasma 与 Plasma Mobile 使用 SDDM；`server` 模式不适用。 | `true` / `false` | `true` |
+| **username** | 非 root 用户名。用户会加入系统中可用的 `sudo`、`audio`、`video`、`render`、`input`、`netdev`、`plugdev` 等用户组。 | 字符串 | `Redmi` |
+| **hostname** | 系统主机名。 | 字符串 | `marble-debian` |
+| **language** | 系统语言。选择 `None (C.UTF-8)` 时保留默认 locale；选择其他项时会同时生成 `en_US.UTF-8` 和所选 locale，并将所选 locale 设为默认。 | `None (C.UTF-8)` / `en_US.UTF-8` / `zh_CN.UTF-8` / `zh_TW.UTF-8` / `ja_JP.UTF-8` / `ko_KR.UTF-8` / `de_DE.UTF-8` / `fr_FR.UTF-8` / `es_ES.UTF-8` / `ru_RU.UTF-8` | `None (C.UTF-8)` |
+| **image_size** | rootfs 镜像的初始大小。`fstab` 配置了 `x-systemd.growfs`，首次启动时会自动扩展到实际分区大小。 | 形如 `10G`、`8192M` 的大小 | `10G` |
+| **esp_size** | ESP 镜像大小。marble 的 ESP 分区为 128 MiB，不应超过该大小。 | 形如 `128M`、`1G` 的大小 | `128M` |
+| **root_partition** | rootfs 所在 GPT 分区的标签。该值会写入 `fstab`，并由内核包的 `postinst` 同步到 `extlinux.conf` 的 `root=`。必须与实际分区标签一致。 | GPT 分区标签 | `linux` |
+| **deb_repo** | 发布设备 `.deb` 的 GitHub 仓库。 | `owner/repository` | `GhfunNiHe/marble-deb-packages` |
+| **deb_release** | 拉取设备 `.deb` 的 Release 标签。`latest` 表示最新 Release。 | Release 标签 | `latest` |
+| **extra_deb_urls** | 额外 `.deb` 的下载地址，一行一个。 | 有效的 `.deb` URL | 空 |
+| **android_boot_entry** | 将 `extras/others.env` 写入 `esp:/extlinux/others.env`，使 U-Boot 菜单提供 Android / Debian 启动项。 | `true` / `false` | `true` |
+| **extra_packages** | 追加安装到基础软件包集合中的 Debian 软件包，以空格分隔。 | 软件包名称 | 空 |
+
+> **注意事项**
+>
+> - 镜像中普通用户和 root 的初始密码来自仓库 Secret `ROOTFS_PASSWORD`，建议在运行构建前创建该 Secret。
+> - 如果未设置 `ROOTFS_PASSWORD`，构建仍会继续，但密码会回退为不安全的默认值 `password`。
+> - `esp_size` 不应超过设备的 ESP 分区大小，marble 默认为 128 MiB。
+> - `root_partition` 必须与实际 GPT 分区标签一致；ESP 分区标签固定为 `esp`，因为 U-Boot 会按该标签查找启动分区。
+
+---
+
+## 产物说明
+
+| 产物 | 说明 |
+|---|---|
+| `rootfs.simg.xz` | Android sparse ext4 镜像，没有分区表；文件系统 LABEL 固定为 `linux`。启动时使用 `root_partition` 指定的 GPT 分区标签。 |
+| `esp.simg.xz` | Android sparse FAT 镜像，LABEL 为 `ESP`，使用 4096 字节逻辑扇区。 |
+| `SHA256SUMS` | rootfs 与 ESP 镜像的 SHA-256 校验值，位于 rootfs 产物中。 |
+
+ESP 中包含：
+
+- `/marble/vmlinuz`；
+- `/marble/sm8475-xiaomi-marble.dtb`；
+- `/extlinux/extlinux.conf`；
+- 可选的 `/extlinux/others.env`。
+
+`vmlinuz` 必须是未压缩的 arm64 `Image`，因为 U-Boot 使用 `booti` 启动内核。
+
+ESP 必须使用 4096 字节逻辑扇区。marble 的 UFS 逻辑扇区大小为 4096 字节；使用 512 字节 FAT 时，Linux 可能无法挂载 ESP，表现为紧急模式或黑屏。构建过程会解析 FAT BPB 并检查扇区大小。
+
+设备启动链如下：
+
+```text
+ABL
+  -> boot_b（U-Boot）
+  -> esp:/extlinux/extlinux.conf
+  -> esp:/marble/vmlinuz + DTB
+  -> root=PARTLABEL=<root_partition>
 ```
 
-- **rootfs.simg** —— Android sparse ext4，**没有分区表**，文件系统 LABEL 由 `root_partition` 决定（默认 `linux`）。
-- **esp.simg** —— Android sparse FAT32，LABEL=ESP，**4096 字节逻辑扇区**。marble 的 UFS 逻辑扇区是 4096，
-  用 512 字节的 FAT 会静默挂不上（表现为紧急模式/黑屏）；构建时解析 BPB 并硬断言这一项。
-- ESP 布局：`/marble/vmlinuz`、`/marble/sm8475-xiaomi-marble.dtb`、`/extlinux/extlinux.conf`。
-  `vmlinuz` 必须是**未压缩的 arm64 Image**（`booti` 不能加载压缩镜像）。
-- 引导链：`ABL → boot_b（U-Boot）→ esp:/extlinux/extlinux.conf → esp:/marble/vmlinuz + DTB → root=PARTLABEL=<root_partition>`。
-- 构建期会断言：ESP 上三件套齐全、内核是未压缩 Image、且 `extlinux.conf` 的 `root=` 与 `fstab` 一致
-  （这条串起了内核包 postinst「读 fstab 改 extlinux」的整条链路）。
+构建过程中还会检查 ESP 文件是否齐全、内核是否为未压缩 arm64 Image，以及 `extlinux.conf` 的 `root=` 是否与 `fstab` 一致。
+
+---
+
+## 刷机
+
+### 前置条件
+
+- 已解锁 Bootloader；
+- 已安装 TWRP；
+- 电脑已配置 `fastboot`；
+- 设备上已经创建 `esp` 与 rootfs 分区（默认标签为 `linux`）；
+
+> **警告**
+>
+> 以下操作会修改设备分区并可能造成数据丢失。请先备份重要数据，并确认自己理解每条命令的作用。
+
+### 刷入镜像
+
+假设你使用双系统启动方式，并且已经分区好 `esp` 和 `linux`。
+
+下载当前设备的 [U-Boot 镜像](https://github.com/iLtanaka/u-boot-marble/releases/download/v20261008/boot-uboot.img) 以及构建好的 `esp.simg` 和 `rootfs.simg` 镜像。
+
+先解压下载的 Artifact ZIP，并将 `rootfs.simg.xz`、`esp.simg.xz` 与 `SHA256SUMS` 放在同一目录，然后执行：
+
+```bash
+# 1. 校验并解压镜像
+sha256sum -c SHA256SUMS
+xz -d rootfs.simg.xz esp.simg.xz
+
+# 2. 刷入 U-Boot
+fastboot flash boot_b path/to/u-boot.img
+
+# 3. 刷入 ESP
+fastboot flash esp esp.simg
+
+# 4. 刷入 rootfs
+fastboot flash linux rootfs.simg
+
+# 5. 设置启动槽位
+fastboot set_active b
+
+# 6. 重启
+fastboot reboot
+```
+
+如果 `root_partition` 使用了自定义标签，请将 `fastboot flash linux` 中的 `linux` 替换为实际分区标签。
+
+ESP 分区标签必须保持为 `esp`，不要只修改 `root_partition` 而忽略实际分区布局。
+
+---
 
 ## U-Boot 菜单与 `others.env`
 
-`android_boot_entry` 打开时（默认），构建会把 `extras/others.env` 写到 `esp:/extlinux/others.env`。
-这个文件是 U-Boot 启动菜单里「Other systems...」子菜单的数据源（见
-[u-boot-marble](https://github.com/iLtanaka/u-boot-marble) 的 `board/qualcomm/xiaomi-marble.env`，
-`preboot` 里的 `others_next` 与 `bootmenu_1` 的 `others_menu`），打开后可以从 U-Boot 直接启动
-Android（slot a）或回到 Linux，不必用 fastboot 切槽。
+`android_boot_entry` 开启时（默认），构建会把 `extras/others.env` 写入 `esp:/extlinux/others.env`。
 
-文件里**刻意不写** `next_title` / `next_boot`：那是「一次性默认项」机制，需要被启动的系统自行清除
-（上游项目用 `marble-oneshot-clear.service`，Debian 没有这个服务），一旦写入，Android 就会变成每次开机
-的默认项。
+该文件为 U-Boot 的 **Other systems...** 菜单提供以下入口：
 
-## 组件与补丁来源
+- Android；
+- Debian。
 
-所有设备 deb 由 [marble-deb-packages](https://github.com/GhfunNiHe/marble-deb-packages) 构建，
-下表只列上游来源与补丁清单，每个补丁的来源写在对应包的 changelog 里：
+因此可以直接从 U-Boot 菜单切换系统，不必每次使用 `fastboot` 切换启动槽。
 
-| 包 | 上游来源（构建时拉取） | 补丁 / 本地改动 |
+`others.env` 有意不写入 `next_title` / `next_boot`。这两个变量用于设置一次性默认启动项，需要由启动后的系统自行清除；Debian 侧没有对应的 `marble-oneshot-clear.service`，如果写入，Android 可能变成每次开机的默认系统。
+
+---
+
+## 设备组件
+
+所有设备专用软件包均由 [GhfunNiHe/marble-deb-packages](https://github.com/GhfunNiHe/marble-deb-packages) 构建并发布。具体补丁和版本信息记录在各包的 `debian/changelog` 中。
+
+| 软件包 | 作用 | 上游 |
 |---|---|---|
-| `linux-redmi-marble` | [iLtanaka/linux-marble](https://github.com/iLtanaka/linux-marble) `main` | `ath11k-load-wlan-mac-from-firmware.patch`：没有别的 MAC 来源时读固件 `wlan_mac.bin`（否则每次开机随机 MAC）。`iris-decode-order-output.patch`：暴露 display-delay 控件并转发 `HFI_PROP_DECODE_ORDER_OUTPUT`，libva-v4l2 依赖它。两个补丁都由包内 `debian/rules` 按 `series` 应用，打不上即构建失败。 |
-| `marble-device-support` | [iLtanaka/marble-device-support](https://github.com/iLtanaka/marble-device-support)（git clone） | `debian/` 覆盖层：hexagonrpcd 固件根适配、`marble-mac-restore.service`（WLAN MAC + BT 地址取 MAC−1）、只读 NM `ct-data` 配置、ath11k_pci 黑名单、SLPI 崩溃后重拉 hexagonrpcd 的传感器自愈单元（iio-sensor-proxy 随其 `PartOf` 重启）、IMS 使能件 `marble-imsctl` + `marble-ims-enable.service`（配合 `Recommends: 81voltd`）。 |
-| `modemmanager` | [freedesktop ModemManager](https://gitlab.freedesktop.org/mobile-broadband/ModemManager) @ `98777e6` | `0002`：LOC 启动时解锁 AFW 门控 GNSS（否则 QMI error 46）；`0003`：由 Position Report 合成 NMEA；`0004`：netlink use-after-free 回移（上游 `9317cbc4`）。`3.0 (quilt)`，`series` 自动应用。 |
-| `libqmi` | [freedesktop libqmi](https://gitlab.freedesktop.org/mobile-broadband/libqmi) @ `d9e8af5`（1.39.1-dev） | 无本地补丁：该 commit 自带 QMI_LOC 客户端标识 TLV（上游 MR !470），trixie 的 1.38.0 没有。 |
-| `libssc` | [DylanVanAssche/libssc](https://codeberg.org/DylanVanAssche/libssc)（tag 由 changelog 决定，当前 0.4.4） | `wait-for-qmi-service.patch`：等 QRTR 上出现 SSC 服务（DSP 发布得晚，rootfs 也没有 initramfs 可排序）；`0002-libssc-light-four-element.patch`：marble 的 lux 在强度数组 `[1]`，上游读 `[0]` 恒 0；`0003-libssc-light-trim-padding.patch`：去掉占位报文尾部零填充后再解包。实测 0.4.4-4 读数正常（亮环境 ≈200 lux）。 |
-| `libva-v4l2` | [radxa-pkg/libva-v4l2](https://github.com/radxa-pkg/libva-v4l2) @ `0e4ce1e0` | 无本地补丁；meson `-Dfastcv=disabled`，附 `msm_drv_video.so` 别名与 GStreamer VA 环境变量。补上 Debian 缺的 VA 驱动，配合 iris 补丁可硬解 H.264/HEVC/VP9。 |
-| `iio-sensor-proxy-ssc` | [hadess/iio-sensor-proxy](https://gitlab.freedesktop.org/hadess/iio-sensor-proxy) 3.9 | 无本地补丁：`-Dssc-support` 接 libssc 的 SSC/SLPI 链。遗留：自带 udev 规则给所有 `fastrpc-*` 打 `ssc-light`，代理可能落到 ADSP，桌面 `LightLevel` 恒 0；光照又是 on-change，初值只在使能时上报一次。 |
-| `firmware-redmi-marble` | [iLtanaka/firmware-xiaomi-marble](https://github.com/iLtanaka/firmware-xiaomi-marble) `v20261008-2` | 无补丁：ADSP、SLPI、modem、Adreno、IPA、WCN6855 Wi-Fi/BT、传感器注册表等闭源 blob。 |
+| `linux-redmi-marble` | marble 内核、DTB、内核模块与 ESP 启动载荷。 | [iLtanaka/linux-marble](https://github.com/iLtanaka/linux-marble) |
+| `marble-device-support` | 设备支持服务，包括 WLAN / Bluetooth MAC 恢复、NetworkManager 配置、传感器恢复、IMS 使能和硬件调优。 | [iLtanaka/marble-device-support](https://github.com/iLtanaka/marble-device-support) |
+| `modemmanager` | 带 marble 补丁的 ModemManager，用于 GNSS 解锁、NMEA 合成和相关修复。 | [freedesktop ModemManager](https://gitlab.freedesktop.org/mobile-broadband/ModemManager) |
+| `libqmi` | QMI 通信库，包含 QMI_LOC 客户端标识 TLV。 | [freedesktop libqmi](https://gitlab.freedesktop.org/mobile-broadband/libqmi) |
+| `libssc` | Qualcomm SSC / SLPI 传感器通信库。 | [DylanVanAssche/libssc](https://codeberg.org/DylanVanAssche/libssc) |
+| `iio-sensor-proxy-ssc` | 将 SSC 传感器数据提供给 D-Bus，供桌面读取。 | [hadess/iio-sensor-proxy](https://gitlab.freedesktop.org/hadess/iio-sensor-proxy) |
+| `libva-v4l2` | VA-API 后端，配合内核补丁提供 H.264 / HEVC / VP9 硬件解码。 | [radxa-pkg/libva-v4l2](https://github.com/radxa-pkg/libva-v4l2) |
+| `firmware-redmi-marble` | ADSP、SLPI、modem、Adreno、IPA、WCN6855 Wi-Fi / Bluetooth 与传感器注册表等固件。 | [iLtanaka/firmware-xiaomi-marble](https://github.com/iLtanaka/firmware-xiaomi-marble) |
+
+---
 
 ## 许可与第三方组件
 
-本仓库自身只有构建脚本与一份 U-Boot 环境文件，未声明开源许可证。仓库内及构建期引入的第三方内容如下，
-版权归各自权利人：
+本仓库自身只包含 GitHub Actions 工作流和一份 U-Boot 环境文件，目前未声明开源许可证。
+
+仓库内以及构建期引入的第三方内容如下，版权归各自权利人所有：
 
 | 内容 | 来源 | 许可 |
 |---|---|---|
 | `.github/workflows/rootfs-debian.yml` | 本仓库 | 未声明 |
-| `extras/others.env` | 本项目的 U-Boot 启动菜单约定（配合 [u-boot-marble](https://github.com/iLtanaka/u-boot-marble) 的 `others_next`/`others_menu`） | 随上游 |
-| 全部设备 `.deb` | [GhfunNiHe/marble-deb-packages](https://github.com/GhfunNiHe/marble-deb-packages) 的 release | 见各包 `debian/copyright` |
-| `libva-v4l2`（VA-API 后端） | [radxa-pkg/libva-v4l2](https://github.com/radxa-pkg/libva-v4l2)（原 fork 为 strongtz/libva-v4l2） | MIT |
-| 内核、驱动与上表补丁 | 见上表各自上游 | GPL-2.0-only 等，随各自上游 |
-| 固件 blob | 高通 / 小米（仅随设备分发） | 专有，仅用于在自有设备上运行 Linux |
+| `extras/others.env` | 本项目的 U-Boot 启动菜单约定，配合 [u-boot-marble](https://github.com/iLtanaka/u-boot-marble) 使用 | 随上游 |
+| 全部设备 `.deb` | [GhfunNiHe/marble-deb-packages](https://github.com/GhfunNiHe/marble-deb-packages) 的 Release | 见各包 `debian/copyright` |
+| `libva-v4l2` | [radxa-pkg/libva-v4l2](https://github.com/radxa-pkg/libva-v4l2) | MIT |
+| 内核、驱动与设备补丁 | 见上表各上游项目 | GPL-2.0-only 等，随各自上游 |
+| 固件 blob | 高通 / 小米，仅随设备分发 | 专有，仅用于在自有设备上运行 Linux |
+
+---
 
 ## 致谢
 
-- **iLtanaka** —— marble 主线移植（内核、U-Boot、设备支持层、pmaports、固件包）与 ALT Mobile 集成
-- **ianchb** —— ath11k MAC 方案的参考实现
-- **Dylan Van Assche** —— `libssc` 与 `iio-sensor-proxy` 的 SSC 后端
-- **DebianOnMobile** —— Phosh 元包与移动端集成
+本项目受益于以下项目和社区工作：
+
+- **iLtanaka**：marble 主线移植，包括内核、U-Boot、设备支持层、pmaports、固件包与 ALT Mobile 集成；
+- **ianchb**：ath11k MAC 方案的参考实现；
+- **Dylan Van Assche**：`libssc` 与 `iio-sensor-proxy` 的 SSC 后端；
+- **DebianOnMobile**：Phosh 元包与移动端集成。
