@@ -74,7 +74,7 @@ rootfs 产物中还包含 `SHA256SUMS`，可以在刷机前校验镜像完整性
 | **hostname** | 系统主机名。 | 字符串 | `marble-debian` |
 | **language** | 系统语言。选择 `None (C.UTF-8)` 时保留默认 locale；选择其他项时会同时生成 `en_US.UTF-8` 和所选 locale，并将所选 locale 设为默认。 | `None (C.UTF-8)` / `en_US.UTF-8` / `zh_CN.UTF-8` / `zh_TW.UTF-8` / `ja_JP.UTF-8` / `ko_KR.UTF-8` / `de_DE.UTF-8` / `fr_FR.UTF-8` / `es_ES.UTF-8` / `ru_RU.UTF-8` | `None (C.UTF-8)` |
 | **image_size** | rootfs 镜像的初始大小。`fstab` 配置了 `x-systemd.growfs`，首次启动时会自动扩展到实际分区大小。 | 形如 `10G`、`8192M` 的大小 | `10G` |
-| **esp_size** | ESP 镜像大小。|不应超过该大小。 | 形如 `128M`、`1G` 的大小 | `128M` |
+| **esp_size** | ESP 镜像大小，不应超过设备的 ESP 分区大小。 | 形如 `128M`、`1G` 的大小 | `128M` |
 | **root_partition** | rootfs 所在 GPT 分区的标签。该值会写入 `fstab`，并由内核包的 `postinst` 同步到 `extlinux.conf` 的 `root=`。必须与实际分区标签一致。 | GPT 分区标签 | `linux` |
 | **deb_repo** | 发布设备 `.deb` 的 GitHub 仓库。 | `owner/repository` | `GhfunNiHe/marble-deb-packages` |
 | **deb_release** | 拉取设备 `.deb` 的 Release 标签。`latest` 表示最新 Release。 | Release 标签 | `latest` |
@@ -85,7 +85,7 @@ rootfs 产物中还包含 `SHA256SUMS`，可以在刷机前校验镜像完整性
 >
 > - 镜像中普通用户和 root 的初始密码来自仓库 Secret `ROOTFS_PASSWORD`，建议在运行构建前创建该 Secret。
 > - 如果未设置 `ROOTFS_PASSWORD`，构建仍会继续，但密码会回退为不安全的默认值 `password`。
-> - `esp_size` 不应超过设备的 ESP 分区大小，marble 默认为 128 MiB。
+> - `esp_size` 不应超过设备的 ESP 分区大小。
 > - `root_partition` 必须与实际 GPT 分区标签一致；ESP 分区标签固定为 `esp`，因为 U-Boot 会按该标签查找启动分区。
 
 ---

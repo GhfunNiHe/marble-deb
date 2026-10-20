@@ -74,7 +74,7 @@ The following inputs are available when running **Build Debian RootFS** through 
 | **hostname** | System hostname. | string | `marble-debian` |
 | **language** | System locale. Selecting `None (C.UTF-8)` keeps the default locale; selecting another option generates both `en_US.UTF-8` and the selected locale, and makes the selected locale the default. | `None (C.UTF-8)` / `en_US.UTF-8` / `zh_CN.UTF-8` / `zh_TW.UTF-8` / `ja_JP.UTF-8` / `ko_KR.UTF-8` / `de_DE.UTF-8` / `fr_FR.UTF-8` / `es_ES.UTF-8` / `ru_RU.UTF-8` | `None (C.UTF-8)` |
 | **image_size** | Initial rootfs image size. `fstab` enables `x-systemd.growfs`, so the filesystem grows to the real partition size on first boot. | a size such as `10G` or `8192M` | `10G` |
-| **esp_size** | ESP image size. The marble ESP partition is 128 MiB, so this value must not exceed it. | a size such as `128M` or `1G` | `128M` |
+| **esp_size** | ESP image size; must not exceed the device's ESP partition size. | a size such as `128M` or `1G` | `128M` |
 | **root_partition** | GPT partition label containing the rootfs. The value is written to `fstab`, and the kernel package's `postinst` copies it to `root=` in `extlinux.conf`. It must match the actual partition label. | GPT partition label | `linux` |
 | **deb_repo** | GitHub repository that publishes the device `.deb` packages. | `owner/repository` | `GhfunNiHe/marble-deb-packages` |
 | **deb_release** | Release tag from which to download the device `.deb` packages. `latest` means the newest release. | release tag | `latest` |
@@ -85,7 +85,7 @@ The following inputs are available when running **Build Debian RootFS** through 
 >
 > - The initial passwords for the normal user and root come from the repository secret `ROOTFS_PASSWORD`. Create this secret before running the build.
 > - If `ROOTFS_PASSWORD` is not set, the build still runs, but the password falls back to the insecure default value `password`.
-> - `esp_size` must not exceed the device's ESP partition size, which is 128 MiB on marble.
+> - `esp_size` must not exceed the device's ESP partition size.
 > - `root_partition` must match the actual GPT partition label. The ESP partition label must remain `esp`, because U-Boot locates the boot partition by that label.
 
 ---
@@ -129,8 +129,8 @@ The build also checks that all expected ESP files are present, that the kernel i
 ### Prerequisites
 
 - Bootloader is unlocked;
-- TWRP is installed;
-- `fastboot` is configured on your computer;
+- a third-party recovery such as TWRP or OrangeFox is installed;
+- `platform-tools` is configured on your computer;
 - `esp` and rootfs partitions already exist on the device (the default rootfs label is `linux`).
 
 > **Warning**
