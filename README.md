@@ -69,7 +69,7 @@ rootfs 产物中还包含 `SHA256SUMS`，可以在刷机前校验镜像完整性
 |---|---|---|---|
 | **distro_suite** | 要安装的 Debian 版本。`trixie` 为 Debian 13，`forky` 为 Debian 14，`sid` 为滚动开发版。 | `trixie` / `forky` / `sid` | `trixie` |
 | **desktop** | 预装的桌面环境。选择 `server` 时不安装图形界面。 | `Phosh` / `KDE Plasma Mobile` / `KDE Plasma` / `GNOME` / `server` | `Phosh` |
-| **autologin** | 是否自动登录创建的用户。Phosh 使用 greetd + phrog（自动登录通过 `phrog.toml` 的 `initial_session` 实现），GNOME 使用 GDM，KDE Plasma 与 Plasma Mobile 使用 SDDM；`server` 模式不适用。 | `true` / `false` | `true` |
+| **autologin** | 是否自动登录创建的用户。GNOME 使用 GDM，KDE Plasma 与 Plasma Mobile 使用 SDDM；**Phosh 不适用**——它必须经过 phrog 登录界面，greetd 的 `initial_session` 会绕过 greeter 导致会话里缺少 `XDG_CURRENT_DESKTOP`，GNOME 控制中心拒绝启动、系统没有「设置」应用。`server` 模式不适用。 | `true` / `false` | `true` |
 | **username** | 非 root 用户名。用户会加入系统中可用的 `sudo`、`audio`、`video`、`render`、`input`、`netdev`、`plugdev` 等用户组。 | 字符串 | `Redmi` |
 | **hostname** | 系统主机名。 | 字符串 | `marble-debian` |
 | **language** | 系统语言。选择 `None (C.UTF-8)` 时保留默认 locale；选择其他项时会同时生成 `en_US.UTF-8` 和所选 locale，并将所选 locale 设为默认。 | `None (C.UTF-8)` / `en_US.UTF-8` / `zh_CN.UTF-8` / `zh_TW.UTF-8` / `ja_JP.UTF-8` / `ko_KR.UTF-8` / `de_DE.UTF-8` / `fr_FR.UTF-8` / `es_ES.UTF-8` / `ru_RU.UTF-8` | `None (C.UTF-8)` |

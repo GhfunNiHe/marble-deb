@@ -525,14 +525,14 @@ jobs:
             echo '[default_session]'
             echo 'command = "/usr/libexec/phrog-greetd-session"'
             echo 'user = "_greetd"'
-            if [ "${{ inputs.autologin }}" = 'true' ]; then
-              # greetd runs this once at startup instead of showing the greeter,
-              # which is the greetd equivalent of GDM's AutomaticLogin.
-              echo
-              echo '[initial_session]'
-              echo 'command = "phosh-session"'
-              echo "user = \"${{ inputs.username }}\""
-            fi
+            # Deliberately no [initial_session] for Phosh, even when autologin
+            # is requested: greetd would then exec phosh-session directly,
+            # bypassing the greeter. phosh.session declares no DesktopName=, so
+            # the variable never gets exported on that path and Debian's
+            # gnome-control-center refuses to start ("only supported under
+            # GNOME and Unity, exiting") - the phone ends up with no Settings
+            # app. phrog sets it when it launches the session, so the only
+            # working configuration for Phosh is going through the greeter.
           } | sudo tee "$ROOTFS_MOUNT/etc/greetd/phrog.toml" >/dev/null
           sudo cat "$ROOTFS_MOUNT/etc/greetd/phrog.toml"
           sudo chroot "$ROOTFS_MOUNT" systemctl enable greetd
