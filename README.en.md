@@ -110,6 +110,8 @@ The ESP contains:
 
 The ESP must use 4096-byte logical sectors. The marble UFS uses 4096-byte logical sectors; with a 512-byte FAT, Linux may fail to mount the ESP, resulting in emergency mode or a black screen. The build parses the FAT BPB and verifies the sector size.
 
+`esp.simg` is a bare filesystem image rather than a disk image, so its loop mount used during assembly has no `PARTLABEL`. The kernel postinst therefore also accepts the image's filesystem `LABEL=ESP`; on the device, the partition should still retain `PARTLABEL=esp`.
+
 The device boot chain is:
 
 ```text

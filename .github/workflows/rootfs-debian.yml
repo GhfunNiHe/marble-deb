@@ -300,6 +300,15 @@ jobs:
           set -euo pipefail
           sudo mkdir -p "$ESP_MOUNT"
           sudo mount -o loop esp.img "$ESP_MOUNT"
+          esp_fstype=$(findmnt -n -o FSTYPE --target "$ESP_MOUNT")
+          esp_label=$(findmnt -n -o LABEL --target "$ESP_MOUNT")
+          esp_partlabel=$(findmnt -n -o PARTLABEL --target "$ESP_MOUNT")
+          echo "  ESP: FSTYPE=$esp_fstype LABEL=$esp_label PARTLABEL=${esp_partlabel:-<none>}"
+          # esp.img is a bare filesystem image with no partition table, so a
+          # loop mount has no PARTLABEL. The kernel postinst identifies this
+          # build case by the filesystem LABEL=ESP instead.
+          [ "$esp_fstype" = vfat ] || { echo "::error::esp.img is not vfat"; exit 1; }
+          [ "$esp_label" = ESP ] || { echo "::error::esp.img must have filesystem LABEL=ESP"; exit 1; }
           sudo chroot "$ROOTFS_MOUNT" /bin/sh -c 'mountpoint -q /boot/efi' \
             && echo "✓ /boot/efi is a mountpoint inside the chroot"
           echo "✓ esp.img mounted at $ESP_MOUNT"

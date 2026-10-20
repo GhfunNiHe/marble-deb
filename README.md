@@ -110,6 +110,8 @@ ESP 中包含：
 
 ESP 必须使用 4096 字节逻辑扇区。marble 的 UFS 逻辑扇区大小为 4096 字节；使用 512 字节 FAT 时，Linux 可能无法挂载 ESP，表现为紧急模式或黑屏。构建过程会解析 FAT BPB 并检查扇区大小。
 
+`esp.simg` 是裸文件系统镜像而不是磁盘镜像，因此构建阶段挂载它时没有 `PARTLABEL`。内核包的 postinst 因此也接受镜像的文件系统 `LABEL=ESP`；设备上的 ESP 分区仍应保留 `PARTLABEL=esp`。
+
 设备启动链如下：
 
 ```text
