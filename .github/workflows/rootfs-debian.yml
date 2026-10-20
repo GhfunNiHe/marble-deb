@@ -489,6 +489,11 @@ jobs:
       # "GNOME" entry to the session menu that Phosh users never asked for.
       # Phosh has no display manager of its own; the DebianOnMobile stack uses
       # greetd + phrog (a libphosh-based greeter) instead.
+      # phosh-core only Recommends gnome-contacts; it ships neither a dialer nor
+      # an SMS client, so a fresh Phosh image has a phone UI that cannot place a
+      # call or read a message. gnome-calls is the dialer, chatty handles
+      # SMS/MMS (with mmsd-tng as the MMS daemon behind it), and gnome-contacts
+      # is listed explicitly so it survives if recommends are ever dropped.
       - name: "Install Phosh"
         if: ${{ inputs.desktop == 'Phosh' }}
         run: |
@@ -496,8 +501,10 @@ jobs:
           sudo chroot "$ROOTFS_MOUNT" apt-get update
           sudo chroot "$ROOTFS_MOUNT" apt-get install -y \
             phosh-core phosh-mobile-settings gnome-terminal firefox-esr \
+            gnome-calls chatty mmsd-tng gnome-contacts \
             greetd phrog \
-            || sudo chroot "$ROOTFS_MOUNT" apt-get install -y phosh greetd phrog
+            || sudo chroot "$ROOTFS_MOUNT" apt-get install -y \
+                 phosh gnome-calls chatty mmsd-tng gnome-contacts greetd phrog
           echo "✓ Phosh installed"
 
       # phrog ships /usr/lib/systemd/system/greetd.service.d/phrog.conf, which
@@ -536,6 +543,12 @@ jobs:
           sudo chroot "$ROOTFS_MOUNT" systemctl set-default graphical.target
           echo "✓ greetd + phrog configured"
 
+      # plasma-mobile is the shell only: it pulls neither the dialer nor an SMS
+      # client, so a fresh image has a phone UI that cannot place a call or read
+      # a message. Install them explicitly: plasma-dialer (calls), spacebar
+      # (SMS/MMS UI), plasma-phonebook (contacts) and mmsd-tng (the MMS daemon
+      # spacebar talks to). plasma-settings is the mobile settings app; without
+      # it the shell's settings entry opens the desktop panel.
       - name: "Install KDE Plasma Mobile"
         if: ${{ inputs.desktop == 'KDE Plasma Mobile' }}
         run: |
@@ -543,6 +556,7 @@ jobs:
           sudo chroot "$ROOTFS_MOUNT" apt-get update
           sudo chroot "$ROOTFS_MOUNT" apt-get install -y \
             plasma-mobile plasma-workspace plasma-nm \
+            plasma-dialer spacebar plasma-phonebook plasma-settings mmsd-tng \
             sddm konsole firefox-esr \
             pipewire-alsa
           echo "✓ KDE Plasma Mobile installed"
