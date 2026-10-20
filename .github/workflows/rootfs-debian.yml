@@ -616,6 +616,30 @@ jobs:
           sudo chroot "$ROOTFS_MOUNT" systemctl set-default graphical.target
           echo "✓ SDDM configured (session $SESSION)"
 
+      # The login screen is SDDM's own Qt process, so it does not inherit the
+      # scaling Plasma applies to the session: without this it renders at 1x on
+      # a 400+ ppi phone panel and the password field is a few millimetres
+      # wide. Plasma's session scaling is configured from Plasma itself; this
+      # only covers the greeter.
+      - name: "Configure SDDM HiDPI (Plasma / Plasma Mobile)"
+        if: ${{ inputs.desktop == 'KDE Plasma Mobile' || inputs.desktop == 'KDE Plasma' }}
+        run: |
+          set -euo pipefail
+          sudo mkdir -p "$ROOTFS_MOUNT/etc/sddm.conf.d"
+          sudo tee "$ROOTFS_MOUNT/etc/sddm.conf.d/10-hidpi.conf" >/dev/null <<'SDDM_EOF'
+          [X11]
+          ServerArguments=-nolisten tcp -dpi 192
+          EnableHiDPI=true
+
+          [Wayland]
+          EnableHiDPI=true
+
+          [General]
+          GreeterEnvironment=QT_SCREEN_SCALE_FACTORS=2,QT_FONT_DPI=192
+          SDDM_EOF
+          sudo cat "$ROOTFS_MOUNT/etc/sddm.conf.d/10-hidpi.conf"
+          echo "✓ SDDM HiDPI configured"
+
       # ----------------------------------------------------------------
       # Services + fstab
       # ----------------------------------------------------------------
