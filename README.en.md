@@ -69,7 +69,7 @@ The following inputs are available when running **Build Debian RootFS** through 
 |---|---|---|---|
 | **distro_suite** | Debian release to install. `trixie` is Debian 13, `forky` is Debian 14, and `sid` is the rolling development release. | `trixie` / `forky` / `sid` | `trixie` |
 | **desktop** | Desktop environment to preinstall. Select `server` to build without a graphical interface. | `Phosh` / `KDE Plasma Mobile` / `KDE Plasma` / `GNOME` / `server` | `Phosh` |
-| **autologin** | Whether the created user should be logged in automatically. Phosh and GNOME use GDM; KDE Plasma and Plasma Mobile use SDDM. Not applicable to `server` mode. | `true` / `false` | `true` |
+| **autologin** | Whether the created user should be logged in automatically. Phosh uses greetd + phrog (autologin via `initial_session` in `phrog.toml`), GNOME uses GDM, KDE Plasma and Plasma Mobile use SDDM. Not applicable to `server` mode. | `true` / `false` | `true` |
 | **username** | Name of the non-root user. The user is added to the available `sudo`, `audio`, `video`, `render`, `input`, `netdev`, and `plugdev` groups. | string | `Redmi` |
 | **hostname** | System hostname. | string | `marble-debian` |
 | **language** | System locale. Selecting `None (C.UTF-8)` keeps the default locale; selecting another option generates both `en_US.UTF-8` and the selected locale, and makes the selected locale the default. | `None (C.UTF-8)` / `en_US.UTF-8` / `zh_CN.UTF-8` / `zh_TW.UTF-8` / `ja_JP.UTF-8` / `ko_KR.UTF-8` / `de_DE.UTF-8` / `fr_FR.UTF-8` / `es_ES.UTF-8` / `ru_RU.UTF-8` | `None (C.UTF-8)` |
@@ -79,7 +79,6 @@ The following inputs are available when running **Build Debian RootFS** through 
 | **deb_repo** | GitHub repository that publishes the device `.deb` packages. | `owner/repository` | `GhfunNiHe/marble-deb-packages` |
 | **deb_release** | Release tag from which to download the device `.deb` packages. `latest` means the newest release. | release tag | `latest` |
 | **extra_deb_urls** | Additional `.deb` download URLs, one per line. | valid `.deb` URL | empty |
-| **android_boot_entry** | Write `extras/others.env` to `esp:/extlinux/others.env`, adding Android and Debian entries to the U-Boot menu. | `true` / `false` | `true` |
 | **extra_packages** | Additional Debian packages appended to the base package set, separated by spaces. | package names | empty |
 
 > **Notes**
@@ -103,8 +102,7 @@ The ESP contains:
 
 - `/marble/vmlinuz`;
 - `/marble/sm8475-xiaomi-marble.dtb`;
-- `/extlinux/extlinux.conf`;
-- optional `/extlinux/others.env`.
+- `/extlinux/extlinux.conf`.
 
 `vmlinuz` must be an uncompressed arm64 `Image`, because U-Boot boots the kernel with `booti`.
 
@@ -174,21 +172,6 @@ The ESP partition label must remain `esp`; do not change only `root_partition` w
 
 ---
 
-## U-Boot Menu and `others.env`
-
-When `android_boot_entry` is enabled (the default), the build writes `extras/others.env` to `esp:/extlinux/others.env`.
-
-This file provides the following entries in U-Boot's **Other systems...** menu:
-
-- Android;
-- Debian.
-
-This lets you switch systems directly from the U-Boot menu without using `fastboot` to change slots every time.
-
-`others.env` intentionally omits `next_title` and `next_boot`. These variables configure a one-time default boot entry that the booted system is expected to clear. Debian does not provide the matching `marble-oneshot-clear.service`; if these variables were written, Android could become the default system on every boot.
-
----
-
 ## Device Components
 
 All device-specific packages are built and published by [GhfunNiHe/marble-deb-packages](https://github.com/GhfunNiHe/marble-deb-packages). Patch and version details are recorded in each package's `debian/changelog`.
@@ -215,7 +198,6 @@ The repository and build process use the following third-party content. All righ
 | Content | Source | License |
 |---|---|---|
 | `.github/workflows/rootfs-debian.yml` | this repository | not declared |
-| `extras/others.env` | this project's U-Boot boot-menu convention, used with [u-boot-marble](https://github.com/iLtanaka/u-boot-marble) | follows upstream |
 | all device `.deb` packages | releases of [GhfunNiHe/marble-deb-packages](https://github.com/GhfunNiHe/marble-deb-packages) | see each package's `debian/copyright` |
 | `libva-v4l2` | [radxa-pkg/libva-v4l2](https://github.com/radxa-pkg/libva-v4l2) | MIT |
 | kernel, drivers, and device patches | their respective upstream projects listed above | GPL-2.0-only and others, following upstream |

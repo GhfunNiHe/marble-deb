@@ -102,11 +102,6 @@ on:
         type: string
         default: ''
 
-      android_boot_entry:
-        description: '写入 others.env，使 U-Boot 提供 Android 启动项 / Write others.env so U-Boot offers an Android boot entry'
-        type: boolean
-        default: true
-
       extra_packages:
         description: '追加到基础包集的额外软件包，空格分隔（可选） / Extra packages appended to the base set (optional, space separated)'
         type: string
@@ -418,18 +413,6 @@ jobs:
           }
           echo "✓ ESP payload verified ($have)"
 
-      # U-Boot's preboot reads esp:/extlinux/others.env. Keep next_title /
-      # next_boot out of it: Debian ships no marble-oneshot-clear.service, so
-      # a one-shot entry would come back every single boot.
-      - name: "Write U-Boot Others Entry"
-        if: ${{ inputs.android_boot_entry }}
-        run: |
-          set -euo pipefail
-          sudo mkdir -p "$ESP_MOUNT/extlinux"
-          sudo install -Dm644 extras/others.env "$ESP_MOUNT/extlinux/others.env"
-          sudo cat "$ESP_MOUNT/extlinux/others.env"
-          echo "✓ others.env written"
-
       # ----------------------------------------------------------------
       # System tuning
       # ----------------------------------------------------------------
@@ -499,15 +482,59 @@ jobs:
       # Desktop environment
       # ----------------------------------------------------------------
 
+      # No gdm3 here on purpose: Debian's gdm3 hard-depends on gnome-shell,
+      # because the GDM greeter *is* GNOME Shell running in gdm mode. Pulling it
+      # into a phone image drags in the whole GNOME stack (~30 MiB of
+      # gnome-shell / libmutter / gjs / gnome-settings-daemon) and adds a
+      # "GNOME" entry to the session menu that Phosh users never asked for.
+      # Phosh has no display manager of its own; the DebianOnMobile stack uses
+      # greetd + phrog (a libphosh-based greeter) instead.
       - name: "Install Phosh"
         if: ${{ inputs.desktop == 'Phosh' }}
         run: |
           set -euo pipefail
           sudo chroot "$ROOTFS_MOUNT" apt-get update
           sudo chroot "$ROOTFS_MOUNT" apt-get install -y \
-            phosh-core phosh-mobile-settings gnome-terminal gdm3 firefox-esr \
-            || sudo chroot "$ROOTFS_MOUNT" apt-get install -y phosh gdm3
+            phosh-core phosh-mobile-settings gnome-terminal firefox-esr \
+            greetd phrog \
+            || sudo chroot "$ROOTFS_MOUNT" apt-get install -y phosh greetd phrog
           echo "✓ Phosh installed"
+
+      # phrog ships /usr/lib/systemd/system/greetd.service.d/phrog.conf, which
+      # rewrites greetd's ExecStart to use /etc/greetd/phrog.toml, so this file
+      # is what actually decides how Phosh gets started.
+      - name: "Configure greetd + phrog (Phosh)"
+        if: ${{ inputs.desktop == 'Phosh' }}
+        run: |
+          set -euo pipefail
+          sudo mkdir -p "$ROOTFS_MOUNT/etc/greetd"
+          {
+            echo '[general]'
+            echo 'service = "phrog"'
+            echo
+            echo '[terminal]'
+            echo 'vt = 7'
+            echo
+            echo '[default_session]'
+            echo 'command = "/usr/libexec/phrog-greetd-session"'
+            echo 'user = "_greetd"'
+            if [ "${{ inputs.autologin }}" = 'true' ]; then
+              # greetd runs this once at startup instead of showing the greeter,
+              # which is the greetd equivalent of GDM's AutomaticLogin.
+              echo
+              echo '[initial_session]'
+              echo 'command = "phosh-session"'
+              echo "user = \"${{ inputs.username }}\""
+            fi
+          } | sudo tee "$ROOTFS_MOUNT/etc/greetd/phrog.toml" >/dev/null
+          sudo cat "$ROOTFS_MOUNT/etc/greetd/phrog.toml"
+          sudo chroot "$ROOTFS_MOUNT" systemctl enable greetd
+          # graphical.target pulls display-manager.service, and greetd only
+          # carries that name through its [Install] Alias.
+          sudo ln -sf /usr/lib/systemd/system/greetd.service \
+            "$ROOTFS_MOUNT/etc/systemd/system/display-manager.service"
+          sudo chroot "$ROOTFS_MOUNT" systemctl set-default graphical.target
+          echo "✓ greetd + phrog configured"
 
       - name: "Install KDE Plasma Mobile"
         if: ${{ inputs.desktop == 'KDE Plasma Mobile' }}
@@ -546,16 +573,16 @@ jobs:
             gdm3 firefox-esr gnome-control-center
           echo "✓ GNOME installed"
 
-      - name: "Configure GDM (Phosh / GNOME)"
-        if: ${{ (inputs.desktop == 'Phosh' || inputs.desktop == 'GNOME') && !inputs.autologin }}
+      - name: "Configure GDM (GNOME)"
+        if: ${{ inputs.desktop == 'GNOME' && !inputs.autologin }}
         run: |
           set -euo pipefail
           sudo chroot "$ROOTFS_MOUNT" systemctl enable gdm3
           sudo chroot "$ROOTFS_MOUNT" systemctl set-default graphical.target
           echo "✓ GDM enabled (manual login)"
 
-      - name: "Configure GDM Autologin (Phosh / GNOME)"
-        if: ${{ (inputs.desktop == 'Phosh' || inputs.desktop == 'GNOME') && inputs.autologin }}
+      - name: "Configure GDM Autologin (GNOME)"
+        if: ${{ inputs.desktop == 'GNOME' && inputs.autologin }}
         run: |
           set -euo pipefail
           sudo mkdir -p "$ROOTFS_MOUNT/etc/gdm3"
@@ -564,16 +591,6 @@ jobs:
           AutomaticLoginEnable=true
           AutomaticLogin=${{ inputs.username }}
           EOF
-          if [ "${{ inputs.desktop }}" = 'Phosh' ]; then
-            # /usr/share/wayland-sessions/phosh.desktop -> Session=phosh
-            sudo mkdir -p "$ROOTFS_MOUNT/var/lib/AccountsService/users"
-            sudo tee "$ROOTFS_MOUNT/var/lib/AccountsService/users/${{ inputs.username }}" >/dev/null <<EOF
-          [User]
-          Session=phosh
-          XSession=phosh
-          SystemAccount=false
-          EOF
-          fi
           sudo chroot "$ROOTFS_MOUNT" systemctl enable gdm3
           sudo chroot "$ROOTFS_MOUNT" systemctl set-default graphical.target
           echo "✓ GDM autologin configured for ${{ inputs.username }}"

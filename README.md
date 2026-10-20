@@ -69,7 +69,7 @@ rootfs 产物中还包含 `SHA256SUMS`，可以在刷机前校验镜像完整性
 |---|---|---|---|
 | **distro_suite** | 要安装的 Debian 版本。`trixie` 为 Debian 13，`forky` 为 Debian 14，`sid` 为滚动开发版。 | `trixie` / `forky` / `sid` | `trixie` |
 | **desktop** | 预装的桌面环境。选择 `server` 时不安装图形界面。 | `Phosh` / `KDE Plasma Mobile` / `KDE Plasma` / `GNOME` / `server` | `Phosh` |
-| **autologin** | 是否自动登录创建的用户。Phosh 与 GNOME 使用 GDM，KDE Plasma 与 Plasma Mobile 使用 SDDM；`server` 模式不适用。 | `true` / `false` | `true` |
+| **autologin** | 是否自动登录创建的用户。Phosh 使用 greetd + phrog（自动登录通过 `phrog.toml` 的 `initial_session` 实现），GNOME 使用 GDM，KDE Plasma 与 Plasma Mobile 使用 SDDM；`server` 模式不适用。 | `true` / `false` | `true` |
 | **username** | 非 root 用户名。用户会加入系统中可用的 `sudo`、`audio`、`video`、`render`、`input`、`netdev`、`plugdev` 等用户组。 | 字符串 | `Redmi` |
 | **hostname** | 系统主机名。 | 字符串 | `marble-debian` |
 | **language** | 系统语言。选择 `None (C.UTF-8)` 时保留默认 locale；选择其他项时会同时生成 `en_US.UTF-8` 和所选 locale，并将所选 locale 设为默认。 | `None (C.UTF-8)` / `en_US.UTF-8` / `zh_CN.UTF-8` / `zh_TW.UTF-8` / `ja_JP.UTF-8` / `ko_KR.UTF-8` / `de_DE.UTF-8` / `fr_FR.UTF-8` / `es_ES.UTF-8` / `ru_RU.UTF-8` | `None (C.UTF-8)` |
@@ -79,7 +79,6 @@ rootfs 产物中还包含 `SHA256SUMS`，可以在刷机前校验镜像完整性
 | **deb_repo** | 发布设备 `.deb` 的 GitHub 仓库。 | `owner/repository` | `GhfunNiHe/marble-deb-packages` |
 | **deb_release** | 拉取设备 `.deb` 的 Release 标签。`latest` 表示最新 Release。 | Release 标签 | `latest` |
 | **extra_deb_urls** | 额外 `.deb` 的下载地址，一行一个。 | 有效的 `.deb` URL | 空 |
-| **android_boot_entry** | 将 `extras/others.env` 写入 `esp:/extlinux/others.env`，使 U-Boot 菜单提供 Android / Debian 启动项。 | `true` / `false` | `true` |
 | **extra_packages** | 追加安装到基础软件包集合中的 Debian 软件包，以空格分隔。 | 软件包名称 | 空 |
 
 > **注意事项**
@@ -103,8 +102,7 @@ ESP 中包含：
 
 - `/marble/vmlinuz`；
 - `/marble/sm8475-xiaomi-marble.dtb`；
-- `/extlinux/extlinux.conf`；
-- 可选的 `/extlinux/others.env`。
+- `/extlinux/extlinux.conf`。
 
 `vmlinuz` 必须是未压缩的 arm64 `Image`，因为 U-Boot 使用 `booti` 启动内核。
 
@@ -174,21 +172,6 @@ ESP 分区标签必须保持为 `esp`，不要只修改 `root_partition` 而忽�
 
 ---
 
-## U-Boot 菜单与 `others.env`
-
-`android_boot_entry` 开启时（默认），构建会把 `extras/others.env` 写入 `esp:/extlinux/others.env`。
-
-该文件为 U-Boot 的 **Other systems...** 菜单提供以下入口：
-
-- Android；
-- Debian。
-
-因此可以直接从 U-Boot 菜单切换系统，不必每次使用 `fastboot` 切换启动槽。
-
-`others.env` 有意不写入 `next_title` / `next_boot`。这两个变量用于设置一次性默认启动项，需要由启动后的系统自行清除；Debian 侧没有对应的 `marble-oneshot-clear.service`，如果写入，Android 可能变成每次开机的默认系统。
-
----
-
 ## 设备组件
 
 所有设备专用软件包均由 [GhfunNiHe/marble-deb-packages](https://github.com/GhfunNiHe/marble-deb-packages) 构建并发布。具体补丁和版本信息记录在各包的 `debian/changelog` 中。
@@ -215,7 +198,6 @@ ESP 分区标签必须保持为 `esp`，不要只修改 `root_partition` 而忽�
 | 内容 | 来源 | 许可 |
 |---|---|---|
 | `.github/workflows/rootfs-debian.yml` | 本仓库 | 未声明 |
-| `extras/others.env` | 本项目的 U-Boot 启动菜单约定，配合 [u-boot-marble](https://github.com/iLtanaka/u-boot-marble) 使用 | 随上游 |
 | 全部设备 `.deb` | [GhfunNiHe/marble-deb-packages](https://github.com/GhfunNiHe/marble-deb-packages) 的 Release | 见各包 `debian/copyright` |
 | `libva-v4l2` | [radxa-pkg/libva-v4l2](https://github.com/radxa-pkg/libva-v4l2) | MIT |
 | 内核、驱动与设备补丁 | 见上表各上游项目 | GPL-2.0-only 等，随各自上游 |
