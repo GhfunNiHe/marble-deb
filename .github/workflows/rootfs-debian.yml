@@ -1,21 +1,3 @@
-# ============================================================================
-# Build RootFS for Xiaomi POCO F5 / Redmi Note 12 Turbo (marble, SM7475)
-#
-# This repo only ASSEMBLES a root filesystem. Every device .deb comes from
-# GhfunNiHe/marble-deb-packages (linux-redmi-marble, marble-device-support, ...).
-#
-# Artifacts (Android sparse images, then xz -9e):
-#   rootfs.simg.xz   sparse ext4, NO partition table, LABEL=linux
-#   esp.simg.xz      sparse FAT,  LABEL=ESP, 4096-byte logical sectors
-#
-# Decompress with `xz -d` first; fastboot detects sparse by the header magic,
-# so the .simg files flash straight into the matching partitions.
-#
-# Boot chain on the device: ABL -> boot_b (U-Boot) -> esp:/extlinux/extlinux.conf
-#   -> esp:/marble/vmlinuz + esp:/marble/sm8475-xiaomi-marble.dtb
-#   -> root=PARTLABEL=linux (no initramfs).
-# ============================================================================
-
 name: Build Debian RootFS
 
 on:
@@ -114,9 +96,6 @@ env:
 jobs:
   build-rootfs:
     name: "Assemble RootFS"
-    # GitHub's arm64 Linux labels are version-pinned (ubuntu-24.04-arm,
-    # ubuntu-22.04-arm, ubuntu-26.04-arm); there is no "ubuntu-latest-arm"
-    # alias, and an unmatched label leaves the job queued forever.
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 120
 
@@ -441,6 +420,57 @@ jobs:
             echo "✓ Locale set to $LANG_CHOICE (+ en_US.UTF-8)"
           fi
 
+      - name: "Install Language Fonts"
+        run: |
+          set -euo pipefail
+          LANG_CHOICE="${{ inputs.language }}"
+          pkgs=""
+          case "$LANG_CHOICE" in
+            zh_CN.UTF-8|zh_TW.UTF-8|ja_JP.UTF-8|ko_KR.UTF-8)
+              # One package carries all five regional variants (SC/TC/HK/JP/KR)
+              # in Sans, Serif and Mono, so zh_TW does not need a second one.
+              # fonts-noto-cjk-extra (the Light/Medium/Black weights) is left
+              # out on purpose: ~180 MB for weights no desktop UI asks for.
+              pkgs="fonts-noto-cjk" ;;
+          esac
+          # 'server' installs no desktop, and on the desktop images every
+          # Latin font arrives only as a recommends of the desktop stack - so
+          # a server rootfs would end up with no font at all and a console
+          # that cannot draw a single non-ASCII character.
+          if [ "${{ inputs.desktop }}" = 'server' ]; then
+            pkgs="$pkgs fonts-noto-core fonts-noto-mono fonts-dejavu-core"
+          fi
+          pkgs=$(echo $pkgs)   # collapse the blank left by an empty first branch
+          if [ -n "${pkgs// /}" ]; then
+            # fontconfig is what builds the cache and provides fc-list for the
+            # check below; it is not a dependency of the font data packages.
+            sudo chroot "$ROOTFS_MOUNT" apt-get install -y $pkgs fontconfig
+            echo "✓ Fonts for $LANG_CHOICE: $pkgs"
+            echo $pkgs > /tmp/language-fonts.txt
+          else
+            echo "✓ $LANG_CHOICE is fully covered by the desktop fonts"
+            : > /tmp/language-fonts.txt
+          fi
+          # Verify the script is actually renderable instead of trusting apt:
+          # fc-list's :lang= filter is fontconfig's own coverage test, and it
+          # is the same test Qt performs when it shapes the string.
+          case "$LANG_CHOICE" in
+            zh_CN.UTF-8) fc_lang=zh-cn ;;
+            zh_TW.UTF-8) fc_lang=zh-tw ;;
+            ja_JP.UTF-8) fc_lang=ja ;;
+            ko_KR.UTF-8) fc_lang=ko ;;
+            ru_RU.UTF-8) fc_lang=ru ;;
+            de_DE.UTF-8) fc_lang=de ;;
+            fr_FR.UTF-8) fc_lang=fr ;;
+            es_ES.UTF-8) fc_lang=es ;;
+            *) fc_lang="" ;;
+          esac
+          if [ -n "$fc_lang" ] && sudo chroot "$ROOTFS_MOUNT" test -x /usr/bin/fc-list; then
+            n=$(sudo chroot "$ROOTFS_MOUNT" fc-list ":lang=$fc_lang" 2>/dev/null | wc -l)
+            echo "  fc-list :lang=$fc_lang -> $n face(s)"
+            [ "$n" -gt 0 ] || { echo "FAIL: no font covers $fc_lang"; exit 1; }
+          fi
+
       - name: "Create User"
         run: |
           set -euo pipefail
@@ -478,22 +508,6 @@ jobs:
           printf 'root:%s\n' "$ROOTFS_PASSWORD" | sudo chroot "$ROOTFS_MOUNT" chpasswd
           echo "✓ Passwords set for ${{ inputs.username }} and root"
 
-      # ----------------------------------------------------------------
-      # Desktop environment
-      # ----------------------------------------------------------------
-
-      # No gdm3 here on purpose: Debian's gdm3 hard-depends on gnome-shell,
-      # because the GDM greeter *is* GNOME Shell running in gdm mode. Pulling it
-      # into a phone image drags in the whole GNOME stack (~30 MiB of
-      # gnome-shell / libmutter / gjs / gnome-settings-daemon) and adds a
-      # "GNOME" entry to the session menu that Phosh users never asked for.
-      # Phosh has no display manager of its own; the DebianOnMobile stack uses
-      # greetd + phrog (a libphosh-based greeter) instead.
-      # phosh-core only Recommends gnome-contacts; it ships neither a dialer nor
-      # an SMS client, so a fresh Phosh image has a phone UI that cannot place a
-      # call or read a message. gnome-calls is the dialer, chatty handles
-      # SMS/MMS (with mmsd-tng as the MMS daemon behind it), and gnome-contacts
-      # is listed explicitly so it survives if recommends are ever dropped.
       - name: "Install Phosh"
         if: ${{ inputs.desktop == 'Phosh' }}
         run: |
@@ -543,12 +557,6 @@ jobs:
           sudo chroot "$ROOTFS_MOUNT" systemctl set-default graphical.target
           echo "✓ greetd + phrog configured"
 
-      # plasma-mobile is the shell only: it pulls neither the dialer nor an SMS
-      # client, so a fresh image has a phone UI that cannot place a call or read
-      # a message. Install them explicitly: plasma-dialer (calls), spacebar
-      # (SMS/MMS UI), plasma-phonebook (contacts) and mmsd-tng (the MMS daemon
-      # spacebar talks to). plasma-settings is the mobile settings app; without
-      # it the shell's settings entry opens the desktop panel.
       - name: "Install KDE Plasma Mobile"
         if: ${{ inputs.desktop == 'KDE Plasma Mobile' }}
         run: |
@@ -559,13 +567,17 @@ jobs:
             plasma-dialer spacebar plasma-phonebook plasma-settings mmsd-tng \
             sddm konsole firefox-esr \
             pipewire-alsa
-          echo "✓ KDE Plasma Mobile installed"
+          # Two Settings apps end up in the launcher otherwise. plasma-mobile
+          # brings plasma-settings (the mobile one, which is what the shell's
+          # own menu opens), while systemsettings - KDE's desktop System
+          # Settings - is pulled in only as a Recommends of plasma-workspace /
+          # plasma-nm / powerdevil. On a phone it is redundant and does not fit
+          # the shell. Removing it also takes kde-config-screenlocker with it
+          # (that package hard-depends on systemsettings and contributes a KCM
+          # the mobile settings app never shows).
+          sudo chroot "$ROOTFS_MOUNT" apt-get purge -y systemsettings
+          echo "✓ KDE Plasma Mobile installed (desktop systemsettings removed)"
 
-      # Plain Plasma, no mobile shell: kde-plasma-desktop is the Plasma 6
-      # metapackage in trixie (5:162, arm64). Its session name is "plasma"
-      # (/usr/share/wayland-sessions/plasma.desktop), where the option above
-      # installs plasma-mobile.desktop. plasma-nm provides the NetworkManager
-      # applet this phone needs for Wi-Fi and mobile data.
       - name: "Install KDE Plasma"
         if: ${{ inputs.desktop == 'KDE Plasma' }}
         run: |
@@ -843,6 +855,12 @@ jobs:
             echo "| desktop | \`${{ inputs.desktop }}\` |"
             echo "| hostname | \`${{ inputs.hostname }}\` |"
             echo "| user | \`${{ inputs.username }}\` |"
+            echo "| language | \`${{ inputs.language }}\` |"
+            if [ -s /tmp/language-fonts.txt ]; then
+              echo "| fonts | \`$(tr -s ' ' < /tmp/language-fonts.txt)\` |"
+            else
+              echo "| fonts | none added (desktop defaults only) |"
+            fi
             echo "| rootfs.simg.xz | sparse ext4 \`${{ inputs.image_size }}\`, root=PARTLABEL=${{ inputs.root_partition }} |"
             echo "| esp.simg.xz | sparse FAT \`${{ inputs.esp_size }}\`, 4096B logical sectors, LABEL=ESP |"
             echo "| .debs | \`${{ inputs.deb_repo }}@${{ inputs.deb_release }}\` |"
