@@ -184,7 +184,7 @@ ESP 分区标签必须保持为 `esp`，不要只修改 `root_partition` 而忽�
 | `libqmi` | QMI 通信库，包含 QMI_LOC 客户端标识 TLV。 | [freedesktop libqmi](https://gitlab.freedesktop.org/mobile-broadband/libqmi) |
 | `libssc` | Qualcomm SSC / SLPI 传感器通信库。 | [DylanVanAssche/libssc](https://codeberg.org/DylanVanAssche/libssc) |
 | `iio-sensor-proxy-ssc` | 将 SSC 传感器数据提供给 D-Bus，供桌面读取。 | [hadess/iio-sensor-proxy](https://gitlab.freedesktop.org/hadess/iio-sensor-proxy) |
-| `libva-v4l2` | VA-API 后端，配合内核补丁提供 H.264 / HEVC / VP9 硬件解码。 | [radxa-pkg/libva-v4l2](https://github.com/radxa-pkg/libva-v4l2) |
+| `libva-v4l2` | VA-API 后端，配合内核补丁提供 H.264 / HEVC / VP9 硬件解码。 | [FFT-infra/qualcomm-iris-vaap](https://github.com/FFT-infra/qualcomm-iris-vaapi) |
 | `firmware-redmi-marble` | ADSP、SLPI、modem、Adreno、IPA、WCN6855 Wi-Fi / Bluetooth 与传感器注册表等固件。 | [iLtanaka/firmware-xiaomi-marble](https://github.com/iLtanaka/firmware-xiaomi-marble) |
 
 ---
@@ -199,7 +199,7 @@ ESP 分区标签必须保持为 `esp`，不要只修改 `root_partition` 而忽�
 |---|---|---|
 | `.github/workflows/rootfs-debian.yml` | 本仓库 | 未声明 |
 | 全部设备 `.deb` | [GhfunNiHe/marble-deb-packages](https://github.com/GhfunNiHe/marble-deb-packages) 的 Release | 见各包 `debian/copyright` |
-| `libva-v4l2` | [radxa-pkg/libva-v4l2](https://github.com/radxa-pkg/libva-v4l2) | MIT |
+| `libva-v4l2` | [FFT-infra/qualcomm-iris-vaapi](https://github.com/FFT-infra/qualcomm-iris-vaapi) | MIT and LGPL-2.0 |
 | 内核、驱动与设备补丁 | 见上表各上游项目 | GPL-2.0-only 等，随各自上游 |
 | 固件 blob | 高通 / 小米，仅随设备分发 | 专有，仅用于在自有设备上运行 Linux |
 
