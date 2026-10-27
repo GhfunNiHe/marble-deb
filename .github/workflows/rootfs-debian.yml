@@ -562,10 +562,16 @@ jobs:
         run: |
           set -euo pipefail
           sudo chroot "$ROOTFS_MOUNT" apt-get update
+          # SDDM on trixie (Plasma 6.3), plasma-login-manager on forky/sid.
+          if [ "${{ inputs.distro_suite }}" = 'trixie' ]; then
+            login_manager=sddm
+          else
+            login_manager=plasma-login-manager
+          fi
           sudo chroot "$ROOTFS_MOUNT" apt-get install -y \
             plasma-mobile plasma-workspace plasma-nm \
             plasma-dialer spacebar plasma-phonebook plasma-settings mmsd-tng \
-            sddm konsole firefox-esr \
+            $login_manager konsole firefox-esr \
             pipewire-alsa
           # Two Settings apps end up in the launcher otherwise. plasma-mobile
           # brings plasma-settings (the mobile one, which is what the shell's
@@ -583,10 +589,22 @@ jobs:
         run: |
           set -euo pipefail
           sudo chroot "$ROOTFS_MOUNT" apt-get update
+          # Plasma 6.5/6.7 on forky and newer: plasma-keyboard and
+          # plasma-login-manager instead of maliit-keyboard and sddm.
+          if [ "${{ inputs.distro_suite }}" = 'trixie' ]; then
+            keyboard=maliit-keyboard
+            login_manager=sddm
+            drop_sddm=
+          else
+            keyboard=plasma-keyboard
+            login_manager=plasma-login-manager
+            # kde-plasma-desktop still recommends sddm; drop it.
+            drop_sddm=sddm-
+          fi
           sudo chroot "$ROOTFS_MOUNT" apt-get install -y \
             kde-plasma-desktop plasma-nm \
-            sddm konsole firefox-esr \
-            pipewire-alsa
+            $login_manager konsole firefox-esr \
+            pipewire-alsa $keyboard $drop_sddm
           echo "✓ KDE Plasma installed"
 
       - name: "Install GNOME"
@@ -621,7 +639,7 @@ jobs:
           sudo chroot "$ROOTFS_MOUNT" systemctl set-default graphical.target
           echo "✓ GDM autologin configured for ${{ inputs.username }}"
 
-      - name: "Configure SDDM (Plasma / Plasma Mobile)"
+      - name: "Configure the display manager (Plasma / Plasma Mobile)"
         if: ${{ inputs.desktop == 'KDE Plasma Mobile' || inputs.desktop == 'KDE Plasma' }}
         run: |
           set -euo pipefail
@@ -630,25 +648,30 @@ jobs:
           else
             SESSION=plasma
           fi
+          # plasmalogin reads /etc/plasmalogin.conf.d; sddm reads /etc/sddm.conf.d.
+          if [ "${{ inputs.distro_suite }}" = 'trixie' ]; then
+            DM=sddm
+            CONF="$ROOTFS_MOUNT/etc/sddm.conf.d/autologin.conf"
+          else
+            DM=plasmalogin
+            CONF="$ROOTFS_MOUNT/etc/plasmalogin.conf.d/autologin.conf"
+          fi
           if [ "${{ inputs.autologin }}" = 'true' ]; then
-            sudo mkdir -p "$ROOTFS_MOUNT/etc/sddm.conf.d"
-            sudo tee "$ROOTFS_MOUNT/etc/sddm.conf.d/autologin.conf" >/dev/null <<EOF
+            sudo mkdir -p "$(dirname "$CONF")"
+            sudo tee "$CONF" >/dev/null <<EOF
           [Autologin]
           User=${{ inputs.username }}
           Session=$SESSION
           EOF
           fi
-          sudo chroot "$ROOTFS_MOUNT" systemctl enable sddm
+          sudo chroot "$ROOTFS_MOUNT" systemctl enable "$DM"
           sudo chroot "$ROOTFS_MOUNT" systemctl set-default graphical.target
-          echo "✓ SDDM configured (session $SESSION)"
+          echo "✓ $DM configured (session $SESSION)"
 
-      # The login screen is SDDM's own Qt process, so it does not inherit the
-      # scaling Plasma applies to the session: without this it renders at 1x on
-      # a 400+ ppi phone panel and the password field is a few millimetres
-      # wide. Plasma's session scaling is configured from Plasma itself; this
-      # only covers the greeter.
-      - name: "Configure SDDM HiDPI (Plasma / Plasma Mobile)"
-        if: ${{ inputs.desktop == 'KDE Plasma Mobile' || inputs.desktop == 'KDE Plasma' }}
+      # SDDM's greeter does not inherit Plasma's session scaling;
+      # plasma-login-manager uses a KWin greeter and scales itself.
+      - name: "Configure SDDM HiDPI (trixie)"
+        if: ${{ (inputs.desktop == 'KDE Plasma Mobile' || inputs.desktop == 'KDE Plasma') && inputs.distro_suite == 'trixie' }}
         run: |
           set -euo pipefail
           sudo mkdir -p "$ROOTFS_MOUNT/etc/sddm.conf.d"
