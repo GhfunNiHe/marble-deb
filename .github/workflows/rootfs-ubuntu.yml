@@ -1,0 +1,755 @@
+name: Build Ubuntu RootFS
+
+on:
+  workflow_dispatch:
+    inputs:
+      distro_suite:
+        description: 'Ubuntu 版本 / Ubuntu version'
+        type: choice
+        options:
+          - noble
+          - resolute
+        default: 'noble'
+
+      desktop:
+        description: '桌面环境（server = 无桌面） / Desktop environment (server = no DE)'
+        type: choice
+        options:
+          - GNOME
+          - KDE Plasma
+          - server
+        default: 'KDE Plasma'
+
+      plasma_mobile:
+        description: 'KDE Plasma 改用 Plasma Mobile（而非 Kubuntu 桌面） / Use Plasma Mobile instead of the Kubuntu desktop'
+        type: boolean
+        default: false
+
+      autologin:
+        description: '自动登录 / Autologin'
+        type: boolean
+        default: true
+
+      username:
+        description: '用户名 / Username'
+        type: string
+        default: 'Redmi'
+
+      hostname:
+        description: '主机名 / Hostname'
+        type: string
+        default: 'marble-ubuntu'
+
+      language:
+        description: '系统语言 / System language'
+        type: choice
+        options:
+          - 'None (C.UTF-8)'
+          - 'en_US.UTF-8'
+          - 'zh_CN.UTF-8'
+          - 'zh_TW.UTF-8'
+          - 'ja_JP.UTF-8'
+          - 'ko_KR.UTF-8'
+          - 'de_DE.UTF-8'
+          - 'fr_FR.UTF-8'
+          - 'es_ES.UTF-8'
+          - 'ru_RU.UTF-8'
+        default: 'None (C.UTF-8)'
+
+      image_size:
+        description: 'rootfs.img 大小（首次启动时扩展到实际分区） / rootfs.img size (grown to the real partition on first boot)'
+        type: string
+        default: '10G'
+
+      esp_size:
+        description: 'esp.img 大小（须适配 ESP 分区；marble P34 = 128M） / esp.img size (must fit the ESP partition; marble P34 = 128M)'
+        type: string
+        default: '128M'
+
+      root_partition:
+        description: 'rootfs 启动所用的 GPT 分区标签（写入 fstab 与 extlinux.conf） / Rootfs boot partition label (fstab + extlinux.conf)'
+        type: string
+        default: 'linux'
+
+      deb_repo:
+        description: '发布设备 .deb 的仓库 / Repository that publishes the device .debs'
+        type: string
+        default: 'GhfunNiHe/marble-deb-packages'
+
+      deb_release:
+        description: '拉取 .deb 的 Release 标签（"latest" = 最新版本） / Release tag to pull .debs from ("latest" = newest release)'
+        type: string
+        default: 'latest'
+
+      extra_deb_urls:
+        description: '额外 .deb 链接，每行一个（可选） / Extra .deb URLs, one per line (optional)'
+        type: string
+        default: ''
+
+      extra_packages:
+        description: '追加到基础包集的额外软件包，空格分隔（可选） / Extra packages appended to the base set (optional, space separated)'
+        type: string
+        default: ''
+
+env:
+  ROOTFS_MOUNT: /mnt/rootfs
+  ESP_MOUNT: /mnt/rootfs/boot/efi
+
+jobs:
+  build-rootfs:
+    name: "Assemble RootFS"
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+
+    steps:
+      # ----------------------------------------------------------------
+      # Args & Tools
+      # ----------------------------------------------------------------
+
+      - name: "Checkout Repo"
+        uses: actions/checkout@v7
+
+      - name: "Verify Arguments"
+        run: |
+          set -euo pipefail
+          if [[ "${{ inputs.image_size }}" =~ ^[0-9]+[MG]?$ ]]; then
+            echo "✓ image_size=${{ inputs.image_size }}"
+          else
+            echo "::error::image_size must look like 10G / 8192M"
+            exit 1
+          fi
+          if [[ "${{ inputs.esp_size }}" =~ ^[0-9]+[MG]?$ ]]; then
+            echo "✓ esp_size=${{ inputs.esp_size }}"
+          else
+            echo "::error::esp_size must look like 128M / 1G"
+            exit 1
+          fi
+          esp_size="${{ inputs.esp_size }}"
+          case "$esp_size" in
+            *[Gg]) esp_mib=$(( ${esp_size%[Gg]} * 1024 )) ;;
+            *[Mm]) esp_mib=${esp_size%[Mm]} ;;
+            *)     esp_mib=$(( esp_size / 1048576 )) ;;
+          esac
+          if [ "$esp_mib" -gt 128 ]; then
+            echo "::warning::esp_size=$esp_size exceeds marble's 128M esp partition"
+          fi
+          echo "✓ Arguments verified"
+
+      - name: "Install Build Tools"
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            debootstrap dosfstools mtools e2fsprogs util-linux \
+            kmod python3 curl ca-certificates git \
+            xz-utils android-sdk-libsparse-utils
+          command -v img2simg >/dev/null || { echo "::error::img2simg is missing"; exit 1; }
+          # The runner's debootstrap may not know a newer suite yet; noble's
+          # script reads Release from the mirror and works as a stand-in.
+          suite="${{ inputs.distro_suite }}"
+          script="/usr/share/debootstrap/scripts/$suite"
+          if [ ! -e "$script" ]; then
+            sudo ln -s noble "$script"
+            echo "  linked $suite -> noble"
+          fi
+          echo "✓ Build tools installed"
+
+      # ----------------------------------------------------------------
+      # Collect the device .debs
+      # ----------------------------------------------------------------
+
+      - name: "Download Device .debs"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p debs
+          REPO="${{ inputs.deb_repo }}"
+          REL="${{ inputs.deb_release }}"
+          if [ "$REL" = "latest" ]; then
+            REL="$(gh release view --repo "$REPO" --json tagName -q .tagName)"
+          fi
+          echo "  source: $REPO @ $REL"
+          gh release download "$REL" --repo "$REPO" --pattern '*.deb' --dir debs --clobber
+          echo "  downloaded:"
+          ls -lh debs
+          echo "✓ Device .debs downloaded"
+
+      - name: "Download Extra .debs"
+        if: ${{ inputs.extra_deb_urls != '' }}
+        run: |
+          set -euo pipefail
+          mkdir -p debs
+          while IFS= read -r url; do
+            [ -n "$url" ] || continue
+            echo "  fetching $url"
+            curl -fsSL -O --output-dir debs "$url"
+          done <<< "${{ inputs.extra_deb_urls }}"
+          ls -lh debs
+          echo "✓ Extra .debs downloaded"
+
+      - name: "Summarize Package Set"
+        run: |
+          set -euo pipefail
+          echo "  packages to install into the rootfs:"
+          for f in debs/*.deb; do
+            printf '    %-52s %s\n' "$(basename "$f")" "$(dpkg-deb -f "$f" Package Version Architecture | tr '\n' ' ')"
+          done
+          echo "✓ Package set summarized"
+
+      # ----------------------------------------------------------------
+      # rootfs.img
+      # ----------------------------------------------------------------
+
+      - name: "Create RootFS Image"
+        run: |
+          set -euo pipefail
+          truncate -s "${{ inputs.image_size }}" rootfs.img
+          mkfs.ext4 -q -L linux rootfs.img
+          echo "✓ rootfs.img created (${{ inputs.image_size }})"
+
+      - name: "Mount RootFS Image"
+        run: |
+          set -euo pipefail
+          sudo mkdir -p "$ROOTFS_MOUNT"
+          sudo mount -o loop rootfs.img "$ROOTFS_MOUNT"
+          df -h "$ROOTFS_MOUNT"
+          echo "✓ rootfs.img mounted at $ROOTFS_MOUNT"
+
+      - name: "Run Debootstrap (${{ inputs.distro_suite }})"
+        run: |
+          set -euo pipefail
+          sudo debootstrap \
+            --arch=arm64 \
+            --components=main,restricted,universe,multiverse \
+            --include=ubuntu-keyring \
+            "${{ inputs.distro_suite }}" \
+            "$ROOTFS_MOUNT" \
+            http://ports.ubuntu.com/ubuntu-ports/
+          echo "✓ Debootstrap complete"
+
+      - name: "Mount Virtual File Systems"
+        run: |
+          set -euo pipefail
+          sudo mount --bind /dev "$ROOTFS_MOUNT/dev"
+          sudo mount --bind /dev/pts "$ROOTFS_MOUNT/dev/pts"
+          sudo mount -t proc proc "$ROOTFS_MOUNT/proc"
+          sudo mount -t sysfs sys "$ROOTFS_MOUNT/sys"
+          sudo cp /etc/resolv.conf "$ROOTFS_MOUNT/etc/resolv.conf"
+          printf '#!/bin/sh\nexit 101\n' | sudo tee "$ROOTFS_MOUNT/usr/sbin/policy-rc.d" >/dev/null
+          sudo chmod 755 "$ROOTFS_MOUNT/usr/sbin/policy-rc.d"
+          echo "✓ Virtual file systems mounted, policy-rc.d installed"
+
+      # ----------------------------------------------------------------
+      # esp.img -- created before the kernel deb, whose postinst only
+      # writes the ESP when /boot/efi is a mountpoint. 4096-byte logical
+      # sectors are required by marble's UFS.
+      # ----------------------------------------------------------------
+
+      - name: "Create ESP Image"
+        run: |
+          set -euo pipefail
+          truncate -s "${{ inputs.esp_size }}" esp.img
+          mkfs.fat -S 4096 -n ESP esp.img
+          python3 - <<'PY'
+          import sys
+          d = open('esp.img', 'rb').read(512)
+          bps = int.from_bytes(d[0x0b:0x0d], 'little')
+          print(f"  bytes/sector = {bps}, LABEL={d[0x36:0x3e].decode('latin1').strip()}")
+          if bps != 4096:
+              sys.exit("FATAL: logical sector size must be 4096 on marble")
+          PY
+          echo "✓ esp.img created (${{ inputs.esp_size }}, 4096B logical sectors)"
+
+      - name: "Mount ESP Image"
+        run: |
+          set -euo pipefail
+          sudo mkdir -p "$ESP_MOUNT"
+          sudo mount -o loop esp.img "$ESP_MOUNT"
+          esp_fstype=$(findmnt -n -o FSTYPE --target "$ESP_MOUNT")
+          esp_label=$(findmnt -n -o LABEL --target "$ESP_MOUNT")
+          echo "  ESP: FSTYPE=$esp_fstype LABEL=$esp_label"
+          [ "$esp_fstype" = vfat ] || { echo "::error::esp.img is not vfat"; exit 1; }
+          [ "$esp_label" = ESP ] || { echo "::error::esp.img must have filesystem LABEL=ESP"; exit 1; }
+          sudo chroot "$ROOTFS_MOUNT" /bin/sh -c 'mountpoint -q /boot/efi' \
+            && echo "✓ /boot/efi is a mountpoint inside the chroot"
+          echo "✓ esp.img mounted at $ESP_MOUNT"
+
+      # ----------------------------------------------------------------
+      # Ubuntu sources
+      # ----------------------------------------------------------------
+
+      - name: "Configure APT Sources"
+        run: |
+          set -euo pipefail
+          SUITE="${{ inputs.distro_suite }}"
+          sudo tee "$ROOTFS_MOUNT/etc/apt/sources.list" >/dev/null <<SOURCES
+          deb http://ports.ubuntu.com/ubuntu-ports/ ${SUITE} main restricted universe multiverse
+          deb http://ports.ubuntu.com/ubuntu-ports/ ${SUITE}-updates main restricted universe multiverse
+          deb http://ports.ubuntu.com/ubuntu-ports/ ${SUITE}-security main restricted universe multiverse
+          SOURCES
+          # Ubuntu's firefox is a snap stub; take the native deb from this PPA.
+          sudo chroot "$ROOTFS_MOUNT" bash -c "
+            apt-get update
+            apt-get install -y software-properties-common
+            add-apt-repository -y ppa:mozillateam/ppa
+          "
+          sudo tee "$ROOTFS_MOUNT/etc/apt/preferences.d/mozilla-firefox" >/dev/null <<'PIN'
+          Package: firefox*
+          Pin: release o=LP-PPA-mozillateam
+          Pin-Priority: 1001
+          PIN
+          sudo tee "$ROOTFS_MOUNT/etc/apt/preferences.d/nosnap" >/dev/null <<'PIN'
+          Package: snapd snap-confine
+          Pin: release *
+          Pin-Priority: -1
+          PIN
+          echo "✓ APT sources configured, snapd blocked"
+
+      # ----------------------------------------------------------------
+      # Packages
+      # ----------------------------------------------------------------
+
+      - name: "Install Base Packages"
+        run: |
+          set -euo pipefail
+          sudo chroot "$ROOTFS_MOUNT" apt-get update
+          pkgs="systemd systemd-sysv
+            sudo vim nano wget curl rsync less
+            network-manager openssh-server wpasupplicant dbus
+            ca-certificates chrony iw lm-sensors wireless-regdb
+            net-tools iproute2 usbutils kmod e2fsprogs dosfstools util-linux
+            bluez zram-tools feedbackd qrtr-tools rmtfs tqftpserv
+            libglib2.0-0t64 libprotobuf-c1 libqmi-glib5 libmbim-glib4 libyaml-0-2"
+          # hexagonrpcd only exists from resolute onwards.
+          if [ "${{ inputs.distro_suite }}" != 'noble' ]; then
+            pkgs="$pkgs hexagonrpcd"
+          fi
+          sudo chroot "$ROOTFS_MOUNT" apt-get install -y $pkgs ${{ inputs.extra_packages }}
+          echo "✓ Base packages installed"
+
+      - name: "Use Upstream Regulatory Database"
+        run: |
+          set -euo pipefail
+          sudo chroot "$ROOTFS_MOUNT" update-alternatives --set regulatory.db \
+            /lib/firmware/regulatory.db-upstream || true
+          echo "✓ Regulatory database step done"
+
+      - name: "Configure fstab"
+        run: |
+          set -euo pipefail
+          # The kernel postinst reads the "/" entry to write root= into
+          # extlinux.conf; U-Boot looks the ESP up by the "esp" label.
+          sudo tee "$ROOTFS_MOUNT/etc/fstab" >/dev/null <<EOF
+          # <file system>          <mount point>  <type>  <options>                                            <dump> <pass>
+          PARTLABEL=${{ inputs.root_partition }}  /  ext4  defaults,x-systemd.growfs                            0      1
+          PARTLABEL=esp          /boot/efi      vfat    defaults,noatime,nofail,x-systemd.device-timeout=10s  0      2
+          EOF
+          sudo cat "$ROOTFS_MOUNT/etc/fstab"
+          echo "✓ fstab configured (root=PARTLABEL=${{ inputs.root_partition }})"
+
+      - name: "Install All .deb Packages"
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          pkgs=(debs/*.deb)
+          [ "${#pkgs[@]}" -gt 0 ] || { echo "::error::no .deb files collected"; exit 1; }
+          sudo cp "${pkgs[@]}" "$ROOTFS_MOUNT/tmp/"
+          sudo ls -lh "$ROOTFS_MOUNT/tmp/"*.deb
+          sudo chroot "$ROOTFS_MOUNT" bash -c "
+            apt-get update
+            apt-get install -y /tmp/*.deb 2>&1 || apt-get install -f -y
+            rm -f /tmp/*.deb
+          "
+          echo "✓ All .deb packages installed"
+
+      - name: "Assert ESP Payload"
+        run: |
+          set -euo pipefail
+          ESP="$ESP_MOUNT"
+          echo "--- ESP tree ---"
+          sudo find "$ESP" -mindepth 1 | sort
+          sudo test -s "$ESP/marble/vmlinuz"                  || { echo "::error::ESP missing marble/vmlinuz"; exit 1; }
+          sudo test -s "$ESP/marble/sm8475-xiaomi-marble.dtb" || { echo "::error::ESP missing marble/sm8475-xiaomi-marble.dtb"; exit 1; }
+          sudo test -s "$ESP/extlinux/extlinux.conf"          || { echo "::error::ESP missing extlinux/extlinux.conf"; exit 1; }
+          sudo file "$ESP/marble/vmlinuz" | grep -q "ARM64 boot executable Image" \
+            || { echo "::error::ESP vmlinuz is not an uncompressed ARM64 Image"; exit 1; }
+          sudo cat "$ESP/extlinux/extlinux.conf"
+          want="root=PARTLABEL=${{ inputs.root_partition }}"
+          have="$(sudo grep -o 'root=[^ ]*' "$ESP/extlinux/extlinux.conf" | head -1)"
+          [ "$have" = "$want" ] || {
+            echo "::error::extlinux.conf carries '$have' but the rootfs fstab says '$want'"
+            exit 1
+          }
+          echo "✓ ESP payload verified ($have)"
+
+      # ----------------------------------------------------------------
+      # System tuning
+      # ----------------------------------------------------------------
+
+      - name: "Set Hostname"
+        run: |
+          set -euo pipefail
+          echo "${{ inputs.hostname }}" | sudo tee "$ROOTFS_MOUNT/etc/hostname" >/dev/null
+          grep -q "127.0.1.1.*${{ inputs.hostname }}" "$ROOTFS_MOUNT/etc/hosts" \
+            || echo "127.0.1.1 ${{ inputs.hostname }}" | sudo tee -a "$ROOTFS_MOUNT/etc/hosts" >/dev/null
+          echo "✓ Hostname set to ${{ inputs.hostname }}"
+
+      - name: "Configure Locale"
+        run: |
+          set -euo pipefail
+          LANG_CHOICE="${{ inputs.language }}"
+          if [ "$LANG_CHOICE" = 'None (C.UTF-8)' ]; then
+            echo "✓ System locale stays C.UTF-8"
+          else
+            sudo chroot "$ROOTFS_MOUNT" apt-get update
+            sudo chroot "$ROOTFS_MOUNT" apt-get install -y locales
+            sudo sed -i 's/^# *\(en_US\.UTF-8\)/\1/' "$ROOTFS_MOUNT/etc/locale.gen"
+            sudo sed -i "s/^# *\\(${LANG_CHOICE//./\\.}\\)/\\1/" "$ROOTFS_MOUNT/etc/locale.gen"
+            sudo chroot "$ROOTFS_MOUNT" locale-gen
+            echo "LANG=$LANG_CHOICE" | sudo tee "$ROOTFS_MOUNT/etc/default/locale" >/dev/null
+            echo "✓ Locale set to $LANG_CHOICE (+ en_US.UTF-8)"
+          fi
+
+      - name: "Install Language Fonts"
+        run: |
+          set -euo pipefail
+          LANG_CHOICE="${{ inputs.language }}"
+          pkgs=""
+          case "$LANG_CHOICE" in
+            zh_CN.UTF-8|zh_TW.UTF-8|ja_JP.UTF-8|ko_KR.UTF-8)
+              pkgs="fonts-noto-cjk" ;;
+          esac
+          if [ "${{ inputs.desktop }}" = 'server' ]; then
+            pkgs="$pkgs fonts-noto-core fonts-noto-mono fonts-dejavu-core"
+          fi
+          pkgs=$(echo $pkgs)
+          if [ -n "${pkgs// /}" ]; then
+            sudo chroot "$ROOTFS_MOUNT" apt-get install -y $pkgs fontconfig
+            echo "✓ Fonts for $LANG_CHOICE: $pkgs"
+            echo $pkgs > /tmp/language-fonts.txt
+          else
+            echo "✓ $LANG_CHOICE is fully covered by the desktop fonts"
+            : > /tmp/language-fonts.txt
+          fi
+          case "$LANG_CHOICE" in
+            zh_CN.UTF-8) fc_lang=zh-cn ;;
+            zh_TW.UTF-8) fc_lang=zh-tw ;;
+            ja_JP.UTF-8) fc_lang=ja ;;
+            ko_KR.UTF-8) fc_lang=ko ;;
+            ru_RU.UTF-8) fc_lang=ru ;;
+            de_DE.UTF-8) fc_lang=de ;;
+            fr_FR.UTF-8) fc_lang=fr ;;
+            es_ES.UTF-8) fc_lang=es ;;
+            *) fc_lang="" ;;
+          esac
+          if [ -n "$fc_lang" ] && sudo chroot "$ROOTFS_MOUNT" test -x /usr/bin/fc-list; then
+            n=$(sudo chroot "$ROOTFS_MOUNT" fc-list ":lang=$fc_lang" 2>/dev/null | wc -l)
+            echo "  fc-list :lang=$fc_lang -> $n face(s)"
+            [ "$n" -gt 0 ] || { echo "FAIL: no font covers $fc_lang"; exit 1; }
+          fi
+
+      - name: "Create User"
+        run: |
+          set -euo pipefail
+          user_groups=""
+          for g in sudo audio video render input netdev plugdev; do
+            if sudo chroot "$ROOTFS_MOUNT" getent group "$g" >/dev/null; then
+              user_groups="${user_groups:+$user_groups,}$g"
+            fi
+          done
+          test -n "$user_groups" || { echo "::error::no supplementary group exists in the rootfs"; exit 1; }
+          echo "  groups: $user_groups"
+          sudo chroot "$ROOTFS_MOUNT" useradd -m -s /bin/bash -G "$user_groups" "${{ inputs.username }}"
+          echo "✓ User ${{ inputs.username }} created"
+
+      - name: "Set Passwords"
+        env:
+          ROOTFS_PASSWORD: ${{ secrets.ROOTFS_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ROOTFS_PASSWORD:-}" ]; then
+            ROOTFS_PASSWORD="password"
+            echo "::warning::ROOTFS_PASSWORD secret not set, falling back to the insecure default 'password'"
+          else
+            echo "::add-mask::$ROOTFS_PASSWORD"
+          fi
+          printf '%s:%s\n' "${{ inputs.username }}" "$ROOTFS_PASSWORD" | sudo chroot "$ROOTFS_MOUNT" chpasswd
+          printf 'root:%s\n' "$ROOTFS_PASSWORD" | sudo chroot "$ROOTFS_MOUNT" chpasswd
+          echo "✓ Passwords set for ${{ inputs.username }} and root"
+
+      # ----------------------------------------------------------------
+      # Desktop Environment
+      # ----------------------------------------------------------------
+
+      - name: "Install GNOME"
+        if: ${{ inputs.desktop == 'GNOME' }}
+        run: |
+          set -euo pipefail
+          sudo chroot "$ROOTFS_MOUNT" apt-get update
+          sudo chroot "$ROOTFS_MOUNT" apt-get install -y \
+            gnome-shell gnome-session gnome-terminal \
+            gdm3 gnome-control-center gnome-backgrounds
+          sudo chroot "$ROOTFS_MOUNT" apt-get install -y firefox \
+            || echo "::warning::firefox not installed (snap is blocked, PPA may lack this arch)"
+          echo "✓ GNOME installed"
+
+      - name: "Install KDE Plasma"
+        if: ${{ inputs.desktop == 'KDE Plasma' }}
+        run: |
+          set -euo pipefail
+          sudo chroot "$ROOTFS_MOUNT" apt-get update
+          if [ "${{ inputs.plasma_mobile }}" = 'true' ]; then
+            pkgs=(plasma-mobile plasma-workspace plasma-nm \
+              plasma-dialer spacebar plasma-phonebook plasma-settings mmsd-tng)
+          else
+            pkgs=(kubuntu-desktop)
+          fi
+          # Plasma 5.27 on noble uses Maliit; resolute ships Plasma 6.6.
+          if [ "${{ inputs.distro_suite }}" = 'noble' ]; then
+            keyboard=maliit-keyboard
+          else
+            keyboard=plasma-keyboard
+          fi
+          sudo chroot "$ROOTFS_MOUNT" apt-get install -y "${pkgs[@]}" "$keyboard" konsole
+          sudo chroot "$ROOTFS_MOUNT" apt-get install -y firefox \
+            || echo "::warning::firefox not installed (snap is blocked, PPA may lack this arch)"
+          echo "✓ KDE Plasma installed"
+
+      - name: "Purge Snap"
+        run: |
+          set -euo pipefail
+          sudo chroot "$ROOTFS_MOUNT" apt-get purge -y snapd 2>/dev/null || true
+          sudo rm -rf "$ROOTFS_MOUNT/var/lib/snapd" "$ROOTFS_MOUNT/snap" "$ROOTFS_MOUNT/var/snap"
+          echo "✓ snapd purged"
+
+      - name: "Configure GDM (GNOME)"
+        if: ${{ inputs.desktop == 'GNOME' }}
+        run: |
+          set -euo pipefail
+          sudo mkdir -p "$ROOTFS_MOUNT/etc/gdm3"
+          if [ "${{ inputs.autologin }}" = 'true' ]; then
+            sudo tee "$ROOTFS_MOUNT/etc/gdm3/custom.conf" >/dev/null <<EOF
+          [daemon]
+          AutomaticLoginEnable=true
+          AutomaticLogin=${{ inputs.username }}
+          EOF
+          fi
+          sudo chroot "$ROOTFS_MOUNT" systemctl enable gdm3
+          sudo chroot "$ROOTFS_MOUNT" systemctl set-default graphical.target
+          echo "✓ GDM configured"
+
+      - name: "Configure SDDM (KDE Plasma)"
+        if: ${{ inputs.desktop == 'KDE Plasma' }}
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.plasma_mobile }}" = 'true' ]; then
+            SESSION=plasma-mobile
+          else
+            SESSION=plasma
+          fi
+          if [ "${{ inputs.autologin }}" = 'true' ]; then
+            sudo mkdir -p "$ROOTFS_MOUNT/etc/sddm.conf.d"
+            sudo tee "$ROOTFS_MOUNT/etc/sddm.conf.d/autologin.conf" >/dev/null <<EOF
+          [Autologin]
+          User=${{ inputs.username }}
+          Session=$SESSION
+          EOF
+          fi
+          sudo chroot "$ROOTFS_MOUNT" systemctl enable sddm
+          sudo chroot "$ROOTFS_MOUNT" systemctl set-default graphical.target
+          echo "✓ SDDM configured (session $SESSION)"
+
+      # SDDM's greeter does not inherit the session's scaling.
+      - name: "Configure SDDM HiDPI (KDE Plasma)"
+        if: ${{ inputs.desktop == 'KDE Plasma' }}
+        run: |
+          set -euo pipefail
+          sudo mkdir -p "$ROOTFS_MOUNT/etc/sddm.conf.d"
+          sudo tee "$ROOTFS_MOUNT/etc/sddm.conf.d/10-hidpi.conf" >/dev/null <<'SDDM_EOF'
+          [X11]
+          ServerArguments=-nolisten tcp -dpi 192
+          EnableHiDPI=true
+
+          [Wayland]
+          EnableHiDPI=true
+
+          [General]
+          GreeterEnvironment=QT_SCREEN_SCALE_FACTORS=2,QT_FONT_DPI=192
+          SDDM_EOF
+          sudo cat "$ROOTFS_MOUNT/etc/sddm.conf.d/10-hidpi.conf"
+          echo "✓ SDDM HiDPI configured"
+
+      # ----------------------------------------------------------------
+      # Services + finalize
+      # ----------------------------------------------------------------
+
+      - name: "Enable Services"
+        run: |
+          set -euo pipefail
+          sudo chroot "$ROOTFS_MOUNT" bash -s <<'CHROOT_EOF'
+          set -u
+          enable() {
+            if [ -e "/usr/lib/systemd/system/$1" ] || [ -e "/etc/systemd/system/$1" ]; then
+              systemctl enable "$1" >/dev/null 2>&1 && echo "  enabled $1" || echo "  FAILED $1"
+            else
+              echo "  skip $1 (no unit)"
+            fi
+          }
+          enable NetworkManager.service
+          enable ssh.service
+          enable iio-sensor-proxy.service
+          enable hexagonrpcd.service
+          enable marble-mac-restore.service
+          enable marble-panel-on.service
+          enable marble-compositor-boost.service
+          enable marble-hardware-tuning.service
+          enable marble-touchboost.service
+          CHROOT_EOF
+          echo "✓ Services enabled"
+
+      - name: "Fix Permissions"
+        run: |
+          set -euo pipefail
+          for p in /usr/bin/hexagonrpcd /usr/libexec/iio-sensor-proxy /usr/bin/monitor-sensor /usr/bin/ssccli; do
+            if sudo test -f "$ROOTFS_MOUNT$p"; then
+              sudo chmod 755 "$ROOTFS_MOUNT$p"
+              echo "  chmod +x $p"
+            fi
+          done
+          echo "✓ Permissions checked"
+
+      - name: "Sanity Check the RootFS"
+        run: |
+          set -euo pipefail
+          for p in /sbin/init /etc/fstab /usr/lib/modules /boot/efi; do
+            sudo test -e "$ROOTFS_MOUNT$p" || { echo "::error::rootfs missing $p"; exit 1; }
+          done
+          test "$(sudo readlink -f "$ROOTFS_MOUNT/sbin/init")" = "$ROOTFS_MOUNT/usr/lib/systemd/systemd" \
+            || echo "::warning::/sbin/init does not resolve to systemd"
+          sudo ls "$ROOTFS_MOUNT"/usr/lib/modules/
+          sudo test -s "$ROOTFS_MOUNT"/usr/share/linux-redmi-marble/kernel.release \
+            || echo "::warning::kernel.release marker missing"
+          echo "✓ RootFS sanity check passed"
+
+      - name: "Clean Up"
+        run: |
+          set -euo pipefail
+          sudo chroot "$ROOTFS_MOUNT" apt-get clean || true
+          sudo rm -rf "$ROOTFS_MOUNT/var/lib/apt/lists"/*
+          sudo rm -f "$ROOTFS_MOUNT/usr/sbin/policy-rc.d"
+          sudo rm -f "$ROOTFS_MOUNT/etc/resolv.conf"
+          echo "✓ Cleaned"
+
+      - name: "Unmount Everything"
+        if: always()
+        run: |
+          set -euo pipefail
+          sudo umount "$ESP_MOUNT"             2>/dev/null || true
+          sudo umount "$ROOTFS_MOUNT/dev/pts"  2>/dev/null || true
+          sudo umount "$ROOTFS_MOUNT/dev"      2>/dev/null || true
+          sudo umount "$ROOTFS_MOUNT/proc"     2>/dev/null || true
+          sudo umount "$ROOTFS_MOUNT/sys"      2>/dev/null || true
+          sudo umount "$ROOTFS_MOUNT"          2>/dev/null || true
+          losetup -a || true
+          echo "✓ Unmounted"
+
+      # ----------------------------------------------------------------
+      # Sparse + xz
+      # ----------------------------------------------------------------
+
+      - name: "Convert to Sparse Images"
+        run: |
+          set -euo pipefail
+          img2simg rootfs.img rootfs.simg
+          img2simg esp.img    esp.simg
+          python3 - <<'PY'
+          import sys
+          MAGIC = 0xED26FF3A
+          ok = True
+          for p in ("rootfs.simg", "esp.simg"):
+              with open(p, "rb") as f:
+                  h = f.read(28)
+              magic = int.from_bytes(h[0:4], "little")
+              blk_size = int.from_bytes(h[12:16], "little")
+              total_blks = int.from_bytes(h[16:20], "little")
+              total_chunks = int.from_bytes(h[20:24], "little")
+              print(f"  {p}: magic=0x{magic:08X} blk_sz={blk_size} "
+                    f"blocks={total_blks} chunks={total_chunks}")
+              if magic != MAGIC:
+                  ok = False
+              if blk_size != 4096:
+                  print(f"  ::warning::{p} sparse blk_sz is {blk_size}, expected 4096")
+          if not ok:
+              sys.exit("FATAL: not an Android sparse image")
+          PY
+          ls -lh rootfs.img esp.img rootfs.simg esp.simg
+          echo "✓ Sparse images built"
+
+      - name: "Compress Images (xz -9e)"
+        run: |
+          set -euo pipefail
+          xz -9e -T0 -v rootfs.simg
+          xz -9e -T0 -v esp.simg
+          xz -t rootfs.simg.xz
+          xz -t esp.simg.xz
+          ls -lh rootfs.simg.xz esp.simg.xz
+          echo "✓ Images compressed"
+
+      - name: "Checksums"
+        run: |
+          set -euo pipefail
+          sha256sum rootfs.simg.xz esp.simg.xz | tee SHA256SUMS
+          echo "✓ Checksums generated"
+
+      # ----------------------------------------------------------------
+      # Artifacts
+      # ----------------------------------------------------------------
+
+      - name: "Upload RootFS Image"
+        uses: actions/upload-artifact@v7
+        with:
+          name: rootfs-${{ inputs.distro_suite }}-${{ inputs.desktop }}${{ inputs.plasma_mobile && '-mobile' || '' }}
+          path: |
+            rootfs.simg.xz
+            SHA256SUMS
+          retention-days: 14
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: "Upload ESP Image"
+        uses: actions/upload-artifact@v7
+        with:
+          name: esp-${{ inputs.distro_suite }}-${{ inputs.desktop }}${{ inputs.plasma_mobile && '-mobile' || '' }}
+          path: esp.simg.xz
+          retention-days: 14
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: "Summary"
+        run: |
+          {
+            echo "### Ubuntu RootFS build"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| suite | \`${{ inputs.distro_suite }}\` |"
+            echo "| desktop | \`${{ inputs.desktop }}${{ inputs.plasma_mobile && ' (Plasma Mobile)' || '' }}\` |"
+            echo "| hostname | \`${{ inputs.hostname }}\` |"
+            echo "| user | \`${{ inputs.username }}\` |"
+            echo "| language | \`${{ inputs.language }}\` |"
+            if [ -s /tmp/language-fonts.txt ]; then
+              echo "| fonts | \`$(tr -s ' ' < /tmp/language-fonts.txt)\` |"
+            else
+              echo "| fonts | none added (desktop defaults only) |"
+            fi
+            echo "| rootfs.simg.xz | sparse ext4 \`${{ inputs.image_size }}\`, root=PARTLABEL=${{ inputs.root_partition }} |"
+            echo "| esp.simg.xz | sparse FAT \`${{ inputs.esp_size }}\`, 4096B logical sectors, LABEL=ESP |"
+            echo "| .debs | \`${{ inputs.deb_repo }}@${{ inputs.deb_release }}\` |"
+            echo
+            echo '```'
+            echo "xz -d rootfs.simg.xz esp.simg.xz"
+            echo "fastboot flash esp   esp.simg"
+            echo "fastboot flash linux rootfs.simg"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
