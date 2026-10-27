@@ -1,6 +1,7 @@
 # marble-deb
 
 [![Build Debian RootFS](https://github.com/GhfunNiHe/marble-deb-build/actions/workflows/rootfs-debian.yml/badge.svg?branch=main)](https://github.com/GhfunNiHe/marble-deb-build/actions/workflows/rootfs-debian.yml)
+[![Build Ubuntu RootFS](https://github.com/GhfunNiHe/marble-deb-build/actions/workflows/rootfs-ubuntu.yml/badge.svg?branch=main)](https://github.com/GhfunNiHe/marble-deb-build/actions/workflows/rootfs-ubuntu.yml)
 
 > English version: [README.en.md](README.en.md)
 
@@ -14,7 +15,7 @@
 
 ## 项目简介
 
-本项目使用 **GitHub Actions**，为 **小米 POCO F5 / Redmi Note 12 Turbo（marble，高通 SM7475）** 组装 **Debian arm64** 的 rootfs 与 ESP 镜像。
+本项目使用 **GitHub Actions**，为 **小米 POCO F5 / Redmi Note 12 Turbo（marble，高通 SM7475）** 组装 **Debian** 或 **Ubuntu** arm64 的 rootfs 与 ESP 镜像。两套系统使用相同的设备 `.deb`、分区布局与刷机流程，仅发行版与桌面环境不同。
 
 仓库只负责组装系统镜像，不包含设备源码。内核、设备支持层、网络与传感器组件、固件等全部以 `.deb` 形式从 [GhfunNiHe/marble-deb-packages](https://github.com/GhfunNiHe/marble-deb-packages) 的 Release 获取。
 
@@ -38,15 +39,13 @@
 
 ### 2. 运行构建
 
-在左侧选择 **Build Debian RootFS**，点击右侧的 **Run workflow**。
+在左侧选择 **Build Debian RootFS**（Debian）或 **Build Ubuntu RootFS**（Ubuntu），点击右侧的 **Run workflow**。
 
-展开后可以调整构建参数，具体说明见[高级配置](#高级配置)。如果全部保持默认，将构建：
+展开后可以调整构建参数，具体说明见[高级配置](#高级配置)。如果全部保持默认：
 
-- Debian `trixie`；
-- Phosh 桌面；
-- 用户名 `Redmi`；
-- 主机名 `marble-debian`；
-- 10 GiB rootfs 与 128 MiB ESP。
+- **Debian** 将构建 Debian `trixie`、Phosh 桌面、用户名 `Redmi`、主机名 `marble-debian`；
+- **Ubuntu** 将构建 Ubuntu `noble`、KDE Plasma（Kubuntu）桌面、用户名 `Redmi`、主机名 `marble-ubuntu`；
+- 两者均使用 10 GiB rootfs 与 128 MiB ESP。
 
 确认参数后，点击绿色的 **Run workflow** 开始构建。
 
@@ -54,7 +53,7 @@
 
 构建完成后，可以通过两种方式获取产物：
 
-- **Releases**（推荐）：构建成功会自动发布 Release，标题与 tag 均包含系统、版本和桌面环境。Debian 构建标题形如 `Debian trixie · Phosh (r12)`，tag 为 `debian-trixie-phosh-r12`；Ubuntu 构建标题形如 `Ubuntu noble · KDE Plasma (r12)`，tag 为 `ubuntu-noble-kde-plasma-r12`。Release 正文还会列出 System、Desktop、Hostname、User 等参数。Release 中直接提供 `rootfs.simg.7z.*`、`esp.simg.xz` 与 `SHA256SUMS`，无需再解压 Artifact ZIP。
+- **Releases**（推荐）：构建成功会自动发布 Release，标题与 tag 均包含系统、版本、桌面环境与构建时间（UTC）。Debian 构建标题形如 `Debian trixie · Phosh (2026-10-27 13:55 UTC)`，tag 为 `debian-trixie-phosh-20261027-1355`；Ubuntu 构建标题形如 `Ubuntu noble · KDE Plasma (2026-10-27 13:55 UTC)`，tag 为 `ubuntu-noble-kde-plasma-20261027-1355`。Release 正文还会列出 System、Desktop、Hostname、User 等参数。Release 中直接提供 `rootfs.simg.7z.*`、`esp.simg.xz` 与 `SHA256SUMS`，无需再解压 Artifact ZIP。
 - **Artifacts**：打开本次运行的摘要页面，在 **Artifacts** 区域下载 `rootfs-<suite>-<desktop>` 与 `esp-<suite>-<desktop>`。
 
 rootfs 产物中还包含 `SHA256SUMS`，可以在刷机前校验镜像完整性。
@@ -63,15 +62,15 @@ rootfs 产物中还包含 `SHA256SUMS`，可以在刷机前校验镜像完整性
 
 ## 高级配置
 
-通过 `workflow_dispatch` 手动运行 **Build Debian RootFS** 时，可以使用以下参数：
+通过 `workflow_dispatch` 运行任一工作流时使用以下参数。两个工作流的参数相同，下表的「默认值」按 **Debian / Ubuntu** 顺序列出。
 
-| 参数 | 说明 | 可选值 | 默认值 |
+| 参数 | 说明 | 可选值 | 默认值（Debian / Ubuntu） |
 |---|---|---|---|
-| **distro_suite** | 要安装的 Debian 版本。`trixie` 为 Debian 13，`forky` 为 Debian 14，`sid` 为滚动开发版。 | `trixie` / `forky` / `sid` | `trixie` |
-| **desktop** | 预装的桌面环境。选择 `server` 时不安装图形界面。 | `Phosh` / `KDE Plasma Mobile` / `KDE Plasma` / `GNOME` / `server` | `Phosh` |
-| **autologin** | 是否自动登录创建的用户。GNOME 使用 GDM，KDE Plasma 与 Plasma Mobile 在 `trixie` 使用 SDDM、在 `forky` 及更新版本使用 plasma-login-manager；**Phosh 不适用**——它必须经过 phrog 登录界面，greetd 的 `initial_session` 会绕过 greeter 导致会话里缺少 `XDG_CURRENT_DESKTOP`，GNOME 控制中心拒绝启动、系统没有「设置」应用。`server` 模式不适用。 | `true` / `false` | `true` |
+| **distro_suite** | 要安装的发行版版本。Debian `trixie` 为 Debian 13，`forky` 为 Debian 14，`sid` 为滚动开发版；Ubuntu `noble` 为 24.04 LTS，`resolute` 为 26.04。 | `trixie` / `forky` / `sid`；`noble` / `resolute` | `trixie` / `noble` |
+| **desktop** | 预装的桌面环境。Ubuntu 的 `KDE Plasma` 安装 Kubuntu 元包 `kubuntu-desktop`；选择 `server` 时不安装图形界面。 | `Phosh` / `KDE Plasma Mobile` / `KDE Plasma` / `GNOME` / `server` | `Phosh` / `KDE Plasma` |
+| **autologin** | 是否自动登录创建的用户。GNOME 使用 GDM；KDE Plasma 与 Plasma Mobile 在 Debian `trixie` 和 Ubuntu 上使用 SDDM，在 Debian `forky` 及更新版本使用 plasma-login-manager；**Phosh 不适用**——它必须经过 greeter（Debian 为 `phrog`，Ubuntu `noble` 为 `phog`、`resolute` 为 `phrog`），greetd 的 `initial_session` 会绕过 greeter 导致会话缺少 `XDG_CURRENT_DESKTOP`，GNOME 控制中心拒绝启动、系统没有「设置」应用。`server` 模式不适用。 | `true` / `false` | `true` |
 | **username** | 非 root 用户名。用户会加入系统中可用的 `sudo`、`audio`、`video`、`render`、`input`、`netdev`、`plugdev` 等用户组。 | 字符串 | `Redmi` |
-| **hostname** | 系统主机名。 | 字符串 | `marble-debian` |
+| **hostname** | 系统主机名。 | 字符串 | `marble-debian` / `marble-ubuntu` |
 | **language** | 系统语言。选择 `None (C.UTF-8)` 时保留默认 locale；选择其他项时会同时生成 `en_US.UTF-8` 和所选 locale，并将所选 locale 设为默认。 | `None (C.UTF-8)` / `en_US.UTF-8` / `zh_CN.UTF-8` / `zh_TW.UTF-8` / `ja_JP.UTF-8` / `ko_KR.UTF-8` / `de_DE.UTF-8` / `fr_FR.UTF-8` / `es_ES.UTF-8` / `ru_RU.UTF-8` | `None (C.UTF-8)` |
 | **image_size** | rootfs 镜像的初始大小。`fstab` 配置了 `x-systemd.growfs`，首次启动时会自动扩展到实际分区大小。 | 形如 `10G`、`8192M` 的大小 | `10G` |
 | **esp_size** | ESP 镜像大小，不应超过设备的 ESP 分区大小。 | 形如 `128M`、`1G` 的大小 | `128M` |
@@ -79,9 +78,17 @@ rootfs 产物中还包含 `SHA256SUMS`，可以在刷机前校验镜像完整性
 | **deb_repo** | 发布设备 `.deb` 的 GitHub 仓库。 | `owner/repository` | `GhfunNiHe/marble-deb-packages` |
 | **deb_release** | 拉取设备 `.deb` 的 Release 标签。`latest` 表示最新 Release。 | Release 标签 | `latest` |
 | **extra_deb_urls** | 额外 `.deb` 的下载地址，一行一个。 | 有效的 `.deb` URL | 空 |
-| **extra_packages** | 追加安装到基础软件包集合中的 Debian 软件包，以空格分隔。 | 软件包名称 | 空 |
+| **publish_release** | 构建成功后是否发布 GitHub Release。 | `true` / `false` | `true` |
+| **extra_packages** | 追加安装到基础软件包集合中的软件包，以空格分隔。 | 软件包名称 | 空 |
 
-> **注意事项**
+### Ubuntu 构建说明
+
+- arm64 软件包来自 `ports.ubuntu.com` 的 `main`、`restricted`、`universe`、`multiverse`。Ubuntu 官方 Firefox 是 snap 封装，构建改为从 mozillateam PPA 安装 deb 版，并在最后清除 `snapd`；若该 PPA 缺少当前架构的构建，Firefox 安装失败只告警，不会中断构建。
+- `KDE Plasma` 对应 Kubuntu 的 `kubuntu-desktop`；`KDE Plasma Mobile` 与 `Phosh` 和 Debian 一样是独立选项。
+- Phosh 的登录器按套件分流：`noble` 使用 `phog`（archive 中没有 `phrog`），`resolute` 使用 `phrog` 与 `squeekboard`。两者都由 `greetd` 启动，且不写 `initial_session`，因此 Phosh 下 `autologin` 不生效。
+- 虚拟键盘：`noble`（Plasma 5.27）使用 `maliit-keyboard`，`resolute`（Plasma 6.6）使用 `plasma-keyboard`。Plasma 与 Plasma Mobile 在两个套件中都使用 SDDM。
+
+> **通用注意事项**
 >
 > - 镜像中普通用户和 root 的初始密码来自仓库 Secret `ROOTFS_PASSWORD`，建议在运行构建前创建该 Secret。
 > - 如果未设置 `ROOTFS_PASSWORD`，构建仍会继续，但密码会回退为不安全的默认值 `password`。
@@ -192,13 +199,14 @@ ESP 分区标签必须保持为 `esp`，不要只修改 `root_partition` 而忽�
 
 ## 许可与第三方组件
 
-本仓库自身只包含 GitHub Actions 工作流和一份 U-Boot 环境文件，目前未声明开源许可证。
+本仓库以 **MIT** 许可证发布，详见 [LICENSE](LICENSE)。
 
 仓库内以及构建期引入的第三方内容如下，版权归各自权利人所有：
 
 | 内容 | 来源 | 许可 |
 |---|---|---|
-| `.github/workflows/rootfs-debian.yml` | 本仓库 | 未声明 |
+| `.github/workflows/rootfs-debian.yml` | 本仓库 | MIT |
+| `.github/workflows/rootfs-ubuntu.yml` | 本仓库 | MIT |
 | 全部设备 `.deb` | [GhfunNiHe/marble-deb-packages](https://github.com/GhfunNiHe/marble-deb-packages) 的 Release | 见各包 `debian/copyright` |
 | `libva-v4l2` | [FFT-infra/qualcomm-iris-vaapi](https://github.com/FFT-infra/qualcomm-iris-vaapi) | MIT and LGPL-2.0 |
 | 内核、驱动与设备补丁 | 见上表各上游项目 | GPL-2.0-only 等，随各自上游 |

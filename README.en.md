@@ -1,6 +1,7 @@
 # marble-deb
 
 [![Build Debian RootFS](https://github.com/GhfunNiHe/marble-deb-build/actions/workflows/rootfs-debian.yml/badge.svg?branch=main)](https://github.com/GhfunNiHe/marble-deb-build/actions/workflows/rootfs-debian.yml)
+[![Build Ubuntu RootFS](https://github.com/GhfunNiHe/marble-deb-build/actions/workflows/rootfs-ubuntu.yml/badge.svg?branch=main)](https://github.com/GhfunNiHe/marble-deb-build/actions/workflows/rootfs-ubuntu.yml)
 
 > Simplified Chinese version: [README.md](README.md)
 
@@ -14,7 +15,7 @@
 
 ## Overview
 
-This repository uses **GitHub Actions** to assemble **Debian arm64** rootfs and ESP images for the **Xiaomi POCO F5 / Redmi Note 12 Turbo (marble, Qualcomm SM7475)**.
+This repository uses **GitHub Actions** to assemble **Debian** or **Ubuntu** arm64 rootfs and ESP images for the **Xiaomi POCO F5 / Redmi Note 12 Turbo (marble, Qualcomm SM7475)**. Both systems share the same device `.deb` packages, partition layout, and flashing procedure; only the distribution and desktop environment differ.
 
 The repository only assembles system images and contains no device source code. The kernel, device-support layer, networking and sensor components, firmware, and other device-specific packages are all obtained as `.deb` files from releases of [GhfunNiHe/marble-deb-packages](https://github.com/GhfunNiHe/marble-deb-packages).
 
@@ -38,15 +39,13 @@ Open the **Actions** tab in your fork. If GitHub asks you to enable the workflow
 
 ### 2. Run the Build
 
-Select **Build Debian RootFS** in the left sidebar, then click **Run workflow** on the right.
+Select **Build Debian RootFS** (Debian) or **Build Ubuntu RootFS** (Ubuntu) in the left sidebar, then click **Run workflow** on the right.
 
-Expand the form to adjust the build parameters. See [Advanced Configuration](#advanced-configuration) for details. With all defaults unchanged, the build will produce:
+Expand the form to adjust the build parameters. See [Advanced Configuration](#advanced-configuration) for details. With all defaults unchanged:
 
-- Debian `trixie`;
-- the Phosh desktop;
-- username `Redmi`;
-- hostname `marble-debian`;
-- a 10 GiB rootfs and a 128 MiB ESP.
+- **Debian** builds Debian `trixie` with the Phosh desktop, username `Redmi`, and hostname `marble-debian`;
+- **Ubuntu** builds Ubuntu `noble` with the KDE Plasma (Kubuntu) desktop, username `Redmi`, and hostname `marble-ubuntu`;
+- both use a 10 GiB rootfs and a 128 MiB ESP.
 
 Click the green **Run workflow** button to start the build.
 
@@ -54,7 +53,7 @@ Click the green **Run workflow** button to start the build.
 
 There are two ways to get the images after a successful build:
 
-- **Releases** (recommended): every successful build publishes a release whose title and tag include the system, suite, and desktop. A Debian build is titled like `Debian trixie · Phosh (r12)` with tag `debian-trixie-phosh-r12`; an Ubuntu build is titled like `Ubuntu noble · KDE Plasma (r12)` with tag `ubuntu-noble-kde-plasma-r12`. The release body also lists System, Desktop, Hostname, and User. It contains `rootfs.simg.7z.*`, `esp.simg.xz`, and `SHA256SUMS`, so no Artifact ZIP extraction is needed.
+- **Releases** (recommended): every successful build publishes a release whose title and tag include the system, suite, desktop, and build time (UTC). A Debian build is titled like `Debian trixie · Phosh (2026-10-27 13:55 UTC)` with tag `debian-trixie-phosh-20261027-1355`; an Ubuntu build is titled like `Ubuntu noble · KDE Plasma (2026-10-27 13:55 UTC)` with tag `ubuntu-noble-kde-plasma-20261027-1355`. The release body also lists System, Desktop, Hostname, and User. It contains `rootfs.simg.7z.*`, `esp.simg.xz`, and `SHA256SUMS`, so no Artifact ZIP extraction is needed.
 - **Artifacts**: open the run summary and download `rootfs-<suite>-<desktop>` and `esp-<suite>-<desktop>` from the **Artifacts** section.
 
 The rootfs artifact also contains `SHA256SUMS`, which can be used to verify image integrity before flashing.
@@ -63,15 +62,15 @@ The rootfs artifact also contains `SHA256SUMS`, which can be used to verify imag
 
 ## Advanced Configuration
 
-The following inputs are available when running **Build Debian RootFS** through `workflow_dispatch`:
+The following inputs are available when running either workflow through `workflow_dispatch`. Both workflows take the same inputs; the Default column lists **Debian / Ubuntu** values.
 
-| Parameter | Description | Options | Default |
+| Parameter | Description | Options | Default (Debian / Ubuntu) |
 |---|---|---|---|
-| **distro_suite** | Debian release to install. `trixie` is Debian 13, `forky` is Debian 14, and `sid` is the rolling development release. | `trixie` / `forky` / `sid` | `trixie` |
-| **desktop** | Desktop environment to preinstall. Select `server` to build without a graphical interface. | `Phosh` / `KDE Plasma Mobile` / `KDE Plasma` / `GNOME` / `server` | `Phosh` |
-| **autologin** | Whether the created user should be logged in automatically. GNOME uses GDM; KDE Plasma and Plasma Mobile use SDDM on `trixie` and plasma-login-manager on `forky` and newer; **not applicable to Phosh**, which has to go through the phrog greeter — greetd's `initial_session` bypasses it and the session then misses `XDG_CURRENT_DESKTOP`, so gnome-control-center refuses to start and the phone has no Settings app. Not applicable to `server` mode. | `true` / `false` | `true` |
+| **distro_suite** | Distribution release to install. Debian `trixie` is Debian 13, `forky` is Debian 14, and `sid` is the rolling development release; Ubuntu `noble` is 24.04 LTS and `resolute` is 26.04. | `trixie` / `forky` / `sid`; `noble` / `resolute` | `trixie` / `noble` |
+| **desktop** | Desktop environment to preinstall. On Ubuntu, `KDE Plasma` installs Kubuntu's `kubuntu-desktop`; select `server` to build without a graphical interface. | `Phosh` / `KDE Plasma Mobile` / `KDE Plasma` / `GNOME` / `server` | `Phosh` / `KDE Plasma` |
+| **autologin** | Whether the created user should be logged in automatically. GNOME uses GDM; KDE Plasma and Plasma Mobile use SDDM on Debian `trixie` and Ubuntu, and plasma-login-manager on Debian `forky` and newer; **not applicable to Phosh**, which has to go through a greeter (Debian `phrog`; Ubuntu `noble` `phog`, `resolute` `phrog`) — greetd's `initial_session` bypasses it and the session then misses `XDG_CURRENT_DESKTOP`, so gnome-control-center refuses to start and the phone has no Settings app. Not applicable to `server` mode. | `true` / `false` | `true` |
 | **username** | Name of the non-root user. The user is added to the available `sudo`, `audio`, `video`, `render`, `input`, `netdev`, and `plugdev` groups. | string | `Redmi` |
-| **hostname** | System hostname. | string | `marble-debian` |
+| **hostname** | System hostname. | string | `marble-debian` / `marble-ubuntu` |
 | **language** | System locale. Selecting `None (C.UTF-8)` keeps the default locale; selecting another option generates both `en_US.UTF-8` and the selected locale, and makes the selected locale the default. | `None (C.UTF-8)` / `en_US.UTF-8` / `zh_CN.UTF-8` / `zh_TW.UTF-8` / `ja_JP.UTF-8` / `ko_KR.UTF-8` / `de_DE.UTF-8` / `fr_FR.UTF-8` / `es_ES.UTF-8` / `ru_RU.UTF-8` | `None (C.UTF-8)` |
 | **image_size** | Initial rootfs image size. `fstab` enables `x-systemd.growfs`, so the filesystem grows to the real partition size on first boot. | a size such as `10G` or `8192M` | `10G` |
 | **esp_size** | ESP image size; must not exceed the device's ESP partition size. | a size such as `128M` or `1G` | `128M` |
@@ -79,9 +78,17 @@ The following inputs are available when running **Build Debian RootFS** through 
 | **deb_repo** | GitHub repository that publishes the device `.deb` packages. | `owner/repository` | `GhfunNiHe/marble-deb-packages` |
 | **deb_release** | Release tag from which to download the device `.deb` packages. `latest` means the newest release. | release tag | `latest` |
 | **extra_deb_urls** | Additional `.deb` download URLs, one per line. | valid `.deb` URL | empty |
-| **extra_packages** | Additional Debian packages appended to the base package set, separated by spaces. | package names | empty |
+| **publish_release** | Whether to publish a GitHub Release after a successful build. | `true` / `false` | `true` |
+| **extra_packages** | Additional packages appended to the base package set, separated by spaces. | package names | empty |
 
-> **Notes**
+### Ubuntu Build Notes
+
+- arm64 packages come from `main`, `restricted`, `universe`, and `multiverse` on `ports.ubuntu.com`. Ubuntu's official Firefox is a snap, so the build installs the deb from the mozillateam PPA and purges `snapd` afterwards; if that PPA lacks a build for the current architecture, the Firefox failure is only a warning and does not abort the build.
+- `KDE Plasma` maps to Kubuntu's `kubuntu-desktop`; `KDE Plasma Mobile` and `Phosh` are separate options, matching Debian.
+- The Phosh greeter depends on the suite: `noble` uses `phog` (the archive has no `phrog`), while `resolute` uses `phrog` plus `squeekboard`. Both are started by `greetd` without `initial_session`, so `autologin` has no effect under Phosh.
+- Virtual keyboard: `noble` (Plasma 5.27) uses `maliit-keyboard`, and `resolute` (Plasma 6.6) uses `plasma-keyboard`. Plasma and Plasma Mobile use SDDM on both suites.
+
+> **Common Notes**
 >
 > - The initial passwords for the normal user and root come from the repository secret `ROOTFS_PASSWORD`. Create this secret before running the build.
 > - If `ROOTFS_PASSWORD` is not set, the build still runs, but the password falls back to the insecure default value `password`.
@@ -192,13 +199,14 @@ All device-specific packages are built and published by [GhfunNiHe/marble-deb-pa
 
 ## License and Third-Party Components
 
-This repository contains only the GitHub Actions workflow and one U-Boot environment file, and does not currently declare an open-source license.
+This repository is released under the **MIT** license; see [LICENSE](LICENSE).
 
 The repository and build process use the following third-party content. All rights remain with the respective owners:
 
 | Content | Source | License |
 |---|---|---|
-| `.github/workflows/rootfs-debian.yml` | this repository | not declared |
+| `.github/workflows/rootfs-debian.yml` | this repository | MIT |
+| `.github/workflows/rootfs-ubuntu.yml` | this repository | MIT |
 | all device `.deb` packages | releases of [GhfunNiHe/marble-deb-packages](https://github.com/GhfunNiHe/marble-deb-packages) | see each package's `debian/copyright` |
 | `libva-v4l2` | [FFT-infra/qualcomm-iris-vaapi](https://github.com/FFT-infra/qualcomm-iris-vaapi) | MIT and LGPL-2.0 |
 | kernel, drivers, and device patches | their respective upstream projects listed above | GPL-2.0-only and others, following upstream |
