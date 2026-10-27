@@ -184,7 +184,7 @@ ESP 分区标签必须保持为 `esp`，不要只修改 `root_partition` 而忽�
 | `libqmi` | QMI 通信库，包含 QMI_LOC 客户端标识 TLV。 | [freedesktop libqmi](https://gitlab.freedesktop.org/mobile-broadband/libqmi) |
 | `libssc` | Qualcomm SSC / SLPI 传感器通信库。 | [DylanVanAssche/libssc](https://codeberg.org/DylanVanAssche/libssc) |
 | `iio-sensor-proxy-ssc` | 将 SSC 传感器数据提供给 D-Bus，供桌面读取。 | [hadess/iio-sensor-proxy](https://gitlab.freedesktop.org/hadess/iio-sensor-proxy) |
-| `libva-v4l2` | VA-API 后端，配合内核补丁提供 H.264 / HEVC / VP9 硬件解码。 | [FFT-infra/qualcomm-iris-vaap](https://github.com/FFT-infra/qualcomm-iris-vaapi) |
+| `libva-v4l2` | VA-API 后端，配合内核补丁提供 H.264 / HEVC / VP9 硬件解码。 | [FFT-infra/qualcomm-iris-vaapi](https://github.com/FFT-infra/qualcomm-iris-vaapi) |
 | `firmware-redmi-marble` | ADSP、SLPI、modem、Adreno、IPA、WCN6855 Wi-Fi / Bluetooth 与传感器注册表等固件。 | [iLtanaka/firmware-xiaomi-marble](https://github.com/iLtanaka/firmware-xiaomi-marble) |
 
 ---

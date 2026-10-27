@@ -184,7 +184,7 @@ All device-specific packages are built and published by [GhfunNiHe/marble-deb-pa
 | `libqmi` | QMI communication library including the QMI_LOC client-identification TLV. | [freedesktop libqmi](https://gitlab.freedesktop.org/mobile-broadband/libqmi) |
 | `libssc` | Qualcomm SSC / SLPI sensor communication library. | [DylanVanAssche/libssc](https://codeberg.org/DylanVanAssche/libssc) |
 | `iio-sensor-proxy-ssc` | Exposes SSC sensor data over D-Bus for desktop environments. | [hadess/iio-sensor-proxy](https://gitlab.freedesktop.org/hadess/iio-sensor-proxy) |
-| `libva-v4l2` | VA-API backend providing hardware H.264 / HEVC / VP9 decoding together with the kernel patch. | [radxa-pkg/libva-v4l2](https://github.com/radxa-pkg/libva-v4l2) |
+| `libva-v4l2` | VA-API backend providing hardware H.264 / HEVC / VP9 decoding together with the kernel patch. | [FFT-infra/qualcomm-iris-vaapi](https://github.com/FFT-infra/qualcomm-iris-vaapi) |
 | `firmware-redmi-marble` | Firmware for ADSP, SLPI, modem, Adreno, IPA, WCN6855 Wi-Fi / Bluetooth, the sensor registry, and related components. | [iLtanaka/firmware-xiaomi-marble](https://github.com/iLtanaka/firmware-xiaomi-marble) |
 
 ---
@@ -199,7 +199,7 @@ The repository and build process use the following third-party content. All righ
 |---|---|---|
 | `.github/workflows/rootfs-debian.yml` | this repository | not declared |
 | all device `.deb` packages | releases of [GhfunNiHe/marble-deb-packages](https://github.com/GhfunNiHe/marble-deb-packages) | see each package's `debian/copyright` |
-| `libva-v4l2` | [radxa-pkg/libva-v4l2](https://github.com/radxa-pkg/libva-v4l2) | MIT |
+| `libva-v4l2` | [FFT-infra/qualcomm-iris-vaapi](https://github.com/FFT-infra/qualcomm-iris-vaapi) | MIT and LGPL-2.0 |
 | kernel, drivers, and device patches | their respective upstream projects listed above | GPL-2.0-only and others, following upstream |
 | firmware blobs | Qualcomm / Xiaomi, distributed only for the device | proprietary, for running Linux on your own device |
 
