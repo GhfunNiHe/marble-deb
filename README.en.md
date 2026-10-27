@@ -20,7 +20,7 @@ The repository only assembles system images and contains no device source code. 
 
 Each build produces Android sparse images:
 
-- `rootfs.simg.xz`: ext4 rootfs;
+- `rootfs.simg.7z.001`: ext4 rootfs, split into ~2 GiB (2047 MiB) volumes;
 - `esp.simg.xz`: FAT ESP containing the kernel, DTB, and U-Boot boot configuration.
 
 The system does not use an initramfs; U-Boot starts the kernel directly.
@@ -50,12 +50,12 @@ Expand the form to adjust the build parameters. See [Advanced Configuration](#ad
 
 Click the green **Run workflow** button to start the build.
 
-### 3. Download the Artifacts
+### 3. Download the Images
 
-When the build finishes, open the run summary and download the following from the **Artifacts** section:
+There are two ways to get the images after a successful build:
 
-- `rootfs-<suite>-<desktop>`
-- `esp-<suite>-<desktop>`
+- **Releases** (recommended): every successful build publishes a release whose title and tag include the system, suite, and desktop. A Debian build is titled like `Debian trixie · Phosh (r12)` with tag `debian-trixie-phosh-r12`; an Ubuntu build is titled like `Ubuntu noble · KDE Plasma (r12)` with tag `ubuntu-noble-kde-plasma-r12`. The release body also lists System, Desktop, Hostname, and User. It contains `rootfs.simg.7z.*`, `esp.simg.xz`, and `SHA256SUMS`, so no Artifact ZIP extraction is needed.
+- **Artifacts**: open the run summary and download `rootfs-<suite>-<desktop>` and `esp-<suite>-<desktop>` from the **Artifacts** section.
 
 The rootfs artifact also contains `SHA256SUMS`, which can be used to verify image integrity before flashing.
 
@@ -94,7 +94,7 @@ The following inputs are available when running **Build Debian RootFS** through 
 
 | Artifact | Description |
 |---|---|
-| `rootfs.simg.xz` | Android sparse ext4 image with no partition table. The filesystem LABEL is fixed to `linux`; booting uses the GPT partition label specified by `root_partition`. |
+| `rootfs.simg.7z.001` | Android sparse ext4 image with no partition table. The filesystem LABEL is fixed to `linux`; booting uses the GPT partition label specified by `root_partition`. Split into ~2 GiB (2047 MiB) volumes; keep all volumes to extract. |
 | `esp.simg.xz` | Android sparse FAT image with LABEL `ESP` and 4096-byte logical sectors. |
 | `SHA256SUMS` | SHA-256 checksums for the rootfs and ESP images, included in the rootfs artifact. |
 
@@ -141,14 +141,15 @@ The build also checks that all expected ESP files are present, that the kernel i
 
 These instructions assume a dual-boot setup with `esp` and `linux` already partitioned.
 
-Download the current device's [U-Boot image](https://github.com/iLtanaka/u-boot-marble/releases/download/v20261008/boot-uboot.img) and the built `esp.simg` and `rootfs.simg` images.
+Download the current device's [U-Boot image](https://github.com/iLtanaka/u-boot-marble/releases/download/v20261008/boot-uboot.img) and the built images.
 
-Extract the downloaded Artifact ZIP files, place `rootfs.simg.xz`, `esp.simg.xz`, and `SHA256SUMS` in the same directory, and run:
+Download `rootfs.simg.7z.*`, `esp.simg.xz`, and `SHA256SUMS` from Releases (or extract the Artifact ZIP files), place them all in one directory, and run:
 
 ```bash
 # 1. Verify and decompress the images
 sha256sum -c SHA256SUMS
-xz -d rootfs.simg.xz esp.simg.xz
+7z x rootfs.simg.7z.001
+xz -d esp.simg.xz
 
 # 2. Flash U-Boot
 fastboot flash boot_b path/to/u-boot.img

@@ -20,7 +20,7 @@
 
 构建完成后会生成 Android sparse 镜像：
 
-- `rootfs.simg.xz`：ext4 rootfs；
+- `rootfs.simg.7z.001`：ext4 rootfs，约 2 GiB 分卷；
 - `esp.simg.xz`：FAT ESP，包含内核、DTB 与 U-Boot 启动配置。
 
 系统不使用 initramfs，由 U-Boot 直接启动内核。
@@ -52,10 +52,10 @@
 
 ### 3. 下载产物
 
-构建完成后，打开本次运行的摘要页面，在 **Artifacts** 区域下载：
+构建完成后，可以通过两种方式获取产物：
 
-- `rootfs-<suite>-<desktop>`
-- `esp-<suite>-<desktop>`
+- **Releases**（推荐）：构建成功会自动发布 Release，标题与 tag 均包含系统、版本和桌面环境。Debian 构建标题形如 `Debian trixie · Phosh (r12)`，tag 为 `debian-trixie-phosh-r12`；Ubuntu 构建标题形如 `Ubuntu noble · KDE Plasma (r12)`，tag 为 `ubuntu-noble-kde-plasma-r12`。Release 正文还会列出 System、Desktop、Hostname、User 等参数。Release 中直接提供 `rootfs.simg.7z.*`、`esp.simg.xz` 与 `SHA256SUMS`，无需再解压 Artifact ZIP。
+- **Artifacts**：打开本次运行的摘要页面，在 **Artifacts** 区域下载 `rootfs-<suite>-<desktop>` 与 `esp-<suite>-<desktop>`。
 
 rootfs 产物中还包含 `SHA256SUMS`，可以在刷机前校验镜像完整性。
 
@@ -94,7 +94,7 @@ rootfs 产物中还包含 `SHA256SUMS`，可以在刷机前校验镜像完整性
 
 | 产物 | 说明 |
 |---|---|
-| `rootfs.simg.xz` | Android sparse ext4 镜像，没有分区表；文件系统 LABEL 固定为 `linux`。启动时使用 `root_partition` 指定的 GPT 分区标签。 |
+| `rootfs.simg.7z.001` | Android sparse ext4 镜像，没有分区表；文件系统 LABEL 固定为 `linux`。启动时使用 `root_partition` 指定的 GPT 分区标签。按约 2 GiB（2047 MiB）分卷，解压需同时保留全部分卷。 |
 | `esp.simg.xz` | Android sparse FAT 镜像，LABEL 为 `ESP`，使用 4096 字节逻辑扇区。 |
 | `SHA256SUMS` | rootfs 与 ESP 镜像的 SHA-256 校验值，位于 rootfs 产物中。 |
 
@@ -141,14 +141,15 @@ ABL
 
 假设你使用双系统启动方式，并且已经分区好 `esp` 和 `linux`。
 
-下载当前设备的 [U-Boot 镜像](https://github.com/iLtanaka/u-boot-marble/releases/download/v20261008/boot-uboot.img) 以及构建好的 `esp.simg` 和 `rootfs.simg` 镜像。
+下载当前设备的 [U-Boot 镜像](https://github.com/iLtanaka/u-boot-marble/releases/download/v20261008/boot-uboot.img) 以及构建好的镜像。
 
-先解压下载的 Artifact ZIP，并将 `rootfs.simg.xz`、`esp.simg.xz` 与 `SHA256SUMS` 放在同一目录，然后执行：
+从 Releases 下载 `rootfs.simg.7z.*`、`esp.simg.xz` 与 `SHA256SUMS`（或解压 Artifact ZIP），全部放在同一目录，然后执行：
 
 ```bash
 # 1. 校验并解压镜像
 sha256sum -c SHA256SUMS
-xz -d rootfs.simg.xz esp.simg.xz
+7z x rootfs.simg.7z.001
+xz -d esp.simg.xz
 
 # 2. 刷入 U-Boot
 fastboot flash boot_b path/to/u-boot.img

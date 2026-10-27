@@ -84,6 +84,11 @@ on:
         type: string
         default: ''
 
+      publish_release:
+        description: '构建后发布 GitHub Release / Publish a GitHub Release after the build'
+        type: boolean
+        default: true
+
       extra_packages:
         description: '追加到基础包集的额外软件包，空格分隔（可选） / Extra packages appended to the base set (optional, space separated)'
         type: string
@@ -144,7 +149,7 @@ jobs:
           sudo apt-get install -y \
             debootstrap dosfstools mtools e2fsprogs util-linux \
             kmod python3 curl ca-certificates git \
-            xz-utils android-sdk-libsparse-utils
+            xz-utils p7zip-full android-sdk-libsparse-utils
           command -v img2simg >/dev/null || { echo "::error::img2simg is missing"; exit 1; }
           echo "✓ Build tools installed"
 
@@ -789,14 +794,11 @@ jobs:
           echo "✓ Unmounted"
 
       # ----------------------------------------------------------------
-      # Sparse + xz
+      # Sparse + 7z (rootfs) / xz (esp)
       #
-      # fastboot only writes the non-empty chunks of a sparse image, and this
-      # device is set up for it (the pmOS port carries
-      # deviceinfo_flash_sparse="true"). img2simg rewrites the raw ext4/FAT
-      # image into Android's sparse format, xz does the transport
-      # compression, and upload-artifact is told not to recompress.
-      # fastboot detects sparse by the header magic, not by the file name.
+      # img2simg rewrites the raw ext4/FAT image into Android's sparse format.
+      # rootfs ships as 2 GiB 7z volumes, esp stays a single xz file; fastboot
+      # detects sparse by the header magic, not by the file name.
       # ----------------------------------------------------------------
 
       - name: "Convert to Sparse Images"
@@ -827,20 +829,22 @@ jobs:
           ls -lh rootfs.img esp.img rootfs.simg esp.simg
           echo "✓ Sparse images built"
 
-      - name: "Compress Images (xz -9e)"
+      - name: "Compress Images (rootfs 7z, esp xz)"
         run: |
           set -euo pipefail
-          xz -9e -T0 -v rootfs.simg
+          p7z=$(command -v 7z || command -v 7zz)
+          "$p7z" a -t7z -m0=lzma2 -mx=9 -mfb=273 -md=1024m -mmt=1 -v2047m rootfs.simg.7z rootfs.simg
+          "$p7z" t rootfs.simg.7z.001
+          rm -f rootfs.simg
           xz -9e -T0 -v esp.simg
-          xz -t rootfs.simg.xz
           xz -t esp.simg.xz
-          ls -lh rootfs.simg.xz esp.simg.xz
+          ls -lh rootfs.simg.7z.* esp.simg.xz
           echo "✓ Images compressed"
 
       - name: "Checksums"
         run: |
           set -euo pipefail
-          sha256sum rootfs.simg.xz esp.simg.xz | tee SHA256SUMS
+          sha256sum rootfs.simg.7z.* esp.simg.xz | tee SHA256SUMS
           echo "✓ Checksums generated"
 
       # ----------------------------------------------------------------
@@ -852,7 +856,7 @@ jobs:
         with:
           name: rootfs-${{ inputs.distro_suite }}-${{ inputs.desktop }}
           path: |
-            rootfs.simg.xz
+            rootfs.simg.7z.*
             SHA256SUMS
           retention-days: 14
           compression-level: 0
@@ -884,13 +888,65 @@ jobs:
             else
               echo "| fonts | none added (desktop defaults only) |"
             fi
-            echo "| rootfs.simg.xz | sparse ext4 \`${{ inputs.image_size }}\`, root=PARTLABEL=${{ inputs.root_partition }} |"
+            echo "| rootfs.simg.7z.001 | sparse ext4 \`${{ inputs.image_size }}\`, root=PARTLABEL=${{ inputs.root_partition }}, 2 GiB volumes |"
             echo "| esp.simg.xz | sparse FAT \`${{ inputs.esp_size }}\`, 4096B logical sectors, LABEL=ESP |"
             echo "| .debs | \`${{ inputs.deb_repo }}@${{ inputs.deb_release }}\` |"
             echo
             echo '```'
-            echo "xz -d rootfs.simg.xz esp.simg.xz"
+            echo "7z x rootfs.simg.7z.001"
+            echo "xz -d esp.simg.xz"
             echo "fastboot flash esp   esp.simg"
             echo "fastboot flash linux rootfs.simg"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+  release:
+    name: "Publish Release"
+    needs: build-rootfs
+    if: ${{ inputs.publish_release }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+
+    steps:
+      - name: "Resolve Release Metadata"
+        env:
+          SUITE: ${{ inputs.distro_suite }}
+          DESKTOP: ${{ inputs.desktop }}
+        run: |
+          set -euo pipefail
+          slug=$(printf '%s' "$DESKTOP" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]\+/-/g; s/-$//')
+          echo "TAG=debian-${SUITE}-${slug}-r${{ github.run_number }}" >> "$GITHUB_ENV"
+          echo "TITLE=Debian ${SUITE} · ${DESKTOP} (r${{ github.run_number }})" >> "$GITHUB_ENV"
+
+      - name: "Download Artifacts"
+        uses: actions/download-artifact@v8
+        with:
+          path: release
+          merge-multiple: true
+
+      - name: "Create Release"
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: ${{ env.TITLE }}
+          body: |
+            - System: Debian `${{ inputs.distro_suite }}`
+            - Desktop: `${{ inputs.desktop }}`
+            - Hostname: `${{ inputs.hostname }}`
+            - User: `${{ inputs.username }}`
+            - Image size: `${{ inputs.image_size }}`
+
+            Android sparse images for Xiaomi marble. `rootfs` is split into 2 GiB 7z volumes.
+
+            ```bash
+            sha256sum -c SHA256SUMS
+            7z x rootfs.simg.7z.001
+            xz -d esp.simg.xz
+            fastboot flash esp   esp.simg
+            fastboot flash linux rootfs.simg
+            ```
+          files: release/*
+          fail_on_unmatched_files: true
+          overwrite_files: true
