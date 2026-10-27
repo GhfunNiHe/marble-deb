@@ -15,15 +15,12 @@ on:
         description: '桌面环境（server = 无桌面） / Desktop environment (server = no DE)'
         type: choice
         options:
-          - GNOME
+          - Phosh
+          - KDE Plasma Mobile
           - KDE Plasma
+          - GNOME
           - server
         default: 'KDE Plasma'
-
-      plasma_mobile:
-        description: 'KDE Plasma 改用 Plasma Mobile（而非 Kubuntu 桌面） / Use Plasma Mobile instead of the Kubuntu desktop'
-        type: boolean
-        default: false
 
       autologin:
         description: '自动登录 / Autologin'
@@ -499,24 +496,57 @@ jobs:
             || echo "::warning::firefox not installed (snap is blocked, PPA may lack this arch)"
           echo "✓ GNOME installed"
 
-      - name: "Install KDE Plasma"
-        if: ${{ inputs.desktop == 'KDE Plasma' }}
+      - name: "Install Phosh"
+        if: ${{ inputs.desktop == 'Phosh' }}
         run: |
           set -euo pipefail
           sudo chroot "$ROOTFS_MOUNT" apt-get update
-          if [ "${{ inputs.plasma_mobile }}" = 'true' ]; then
-            pkgs=(plasma-mobile plasma-workspace plasma-nm \
-              plasma-dialer spacebar plasma-phonebook plasma-settings mmsd-tng)
+          # noble's phosh-core (0.38) pairs with phog; resolute (0.52) with phrog.
+          if [ "${{ inputs.distro_suite }}" = 'noble' ]; then
+            greeter=phog
           else
-            pkgs=(kubuntu-desktop)
+            greeter=phrog
           fi
+          sudo chroot "$ROOTFS_MOUNT" apt-get install -y \
+            phosh-core phosh-mobile-settings gnome-terminal \
+            gnome-calls chatty mmsd-tng gnome-contacts greetd "$greeter"
+          sudo chroot "$ROOTFS_MOUNT" apt-get install -y firefox \
+            || echo "::warning::firefox not installed (snap is blocked, PPA may lack this arch)"
+          echo "✓ Phosh installed ($greeter)"
+
+      - name: "Install KDE Plasma Mobile"
+        if: ${{ inputs.desktop == 'KDE Plasma Mobile' }}
+        run: |
+          set -euo pipefail
+          sudo chroot "$ROOTFS_MOUNT" apt-get update
           # Plasma 5.27 on noble uses Maliit; resolute ships Plasma 6.6.
           if [ "${{ inputs.distro_suite }}" = 'noble' ]; then
             keyboard=maliit-keyboard
           else
             keyboard=plasma-keyboard
           fi
-          sudo chroot "$ROOTFS_MOUNT" apt-get install -y "${pkgs[@]}" "$keyboard" konsole
+          sudo chroot "$ROOTFS_MOUNT" apt-get install -y \
+            plasma-mobile plasma-workspace plasma-nm \
+            plasma-dialer spacebar plasma-phonebook plasma-settings mmsd-tng \
+            sddm konsole pipewire-alsa "$keyboard"
+          # Drop the desktop System Settings; plasma-settings is the mobile one.
+          sudo chroot "$ROOTFS_MOUNT" apt-get purge -y systemsettings
+          sudo chroot "$ROOTFS_MOUNT" apt-get install -y firefox \
+            || echo "::warning::firefox not installed (snap is blocked, PPA may lack this arch)"
+          echo "✓ KDE Plasma Mobile installed"
+
+      - name: "Install KDE Plasma"
+        if: ${{ inputs.desktop == 'KDE Plasma' }}
+        run: |
+          set -euo pipefail
+          sudo chroot "$ROOTFS_MOUNT" apt-get update
+          # Plasma 5.27 on noble uses Maliit; resolute ships Plasma 6.6.
+          if [ "${{ inputs.distro_suite }}" = 'noble' ]; then
+            keyboard=maliit-keyboard
+          else
+            keyboard=plasma-keyboard
+          fi
+          sudo chroot "$ROOTFS_MOUNT" apt-get install -y kubuntu-desktop "$keyboard" konsole
           sudo chroot "$ROOTFS_MOUNT" apt-get install -y firefox \
             || echo "::warning::firefox not installed (snap is blocked, PPA may lack this arch)"
           echo "✓ KDE Plasma installed"
@@ -544,11 +574,41 @@ jobs:
           sudo chroot "$ROOTFS_MOUNT" systemctl set-default graphical.target
           echo "✓ GDM configured"
 
-      - name: "Configure SDDM (KDE Plasma)"
-        if: ${{ inputs.desktop == 'KDE Plasma' }}
+      - name: "Configure greetd (Phosh)"
+        if: ${{ inputs.desktop == 'Phosh' }}
         run: |
           set -euo pipefail
-          if [ "${{ inputs.plasma_mobile }}" = 'true' ]; then
+          # phog (noble) and phrog (resolute) ship greetd drop-ins pointing at
+          # their own config; only resolute needs phrog.toml written.
+          # No [initial_session] even with autologin: bypassing the greeter
+          # leaves XDG_CURRENT_DESKTOP unset and breaks gnome-control-center.
+          if [ "${{ inputs.distro_suite }}" != 'noble' ]; then
+            sudo mkdir -p "$ROOTFS_MOUNT/etc/greetd"
+            sudo tee "$ROOTFS_MOUNT/etc/greetd/phrog.toml" >/dev/null <<'PHROG_EOF'
+          [general]
+          service = "phrog"
+
+          [terminal]
+          vt = 7
+
+          [default_session]
+          command = "/usr/libexec/phrog-greetd-session"
+          user = "_greetd"
+          PHROG_EOF
+          fi
+          sudo chroot "$ROOTFS_MOUNT" systemctl enable greetd
+          # graphical.target pulls display-manager.service, which greetd only
+          # carries through its [Install] alias.
+          sudo ln -sf /usr/lib/systemd/system/greetd.service \
+            "$ROOTFS_MOUNT/etc/systemd/system/display-manager.service"
+          sudo chroot "$ROOTFS_MOUNT" systemctl set-default graphical.target
+          echo "✓ greetd configured (Phosh)"
+
+      - name: "Configure SDDM (Plasma / Plasma Mobile)"
+        if: ${{ inputs.desktop == 'KDE Plasma' || inputs.desktop == 'KDE Plasma Mobile' }}
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.desktop }}" = 'KDE Plasma Mobile' ]; then
             SESSION=plasma-mobile
           else
             SESSION=plasma
@@ -566,8 +626,8 @@ jobs:
           echo "✓ SDDM configured (session $SESSION)"
 
       # SDDM's greeter does not inherit the session's scaling.
-      - name: "Configure SDDM HiDPI (KDE Plasma)"
-        if: ${{ inputs.desktop == 'KDE Plasma' }}
+      - name: "Configure SDDM HiDPI (Plasma / Plasma Mobile)"
+        if: ${{ inputs.desktop == 'KDE Plasma' || inputs.desktop == 'KDE Plasma Mobile' }}
         run: |
           set -euo pipefail
           sudo mkdir -p "$ROOTFS_MOUNT/etc/sddm.conf.d"
@@ -716,7 +776,7 @@ jobs:
       - name: "Upload RootFS Image"
         uses: actions/upload-artifact@v7
         with:
-          name: rootfs-${{ inputs.distro_suite }}-${{ inputs.desktop }}${{ inputs.plasma_mobile && '-mobile' || '' }}
+          name: rootfs-${{ inputs.distro_suite }}-${{ inputs.desktop }}
           path: |
             rootfs.simg.7z.*
             SHA256SUMS
@@ -727,7 +787,7 @@ jobs:
       - name: "Upload ESP Image"
         uses: actions/upload-artifact@v7
         with:
-          name: esp-${{ inputs.distro_suite }}-${{ inputs.desktop }}${{ inputs.plasma_mobile && '-mobile' || '' }}
+          name: esp-${{ inputs.distro_suite }}-${{ inputs.desktop }}
           path: esp.simg.xz
           retention-days: 14
           compression-level: 0
@@ -741,7 +801,7 @@ jobs:
             echo "| | |"
             echo "|---|---|"
             echo "| suite | \`${{ inputs.distro_suite }}\` |"
-            echo "| desktop | \`${{ inputs.desktop }}${{ inputs.plasma_mobile && ' (Plasma Mobile)' || '' }}\` |"
+            echo "| desktop | \`${{ inputs.desktop }}\` |"
             echo "| hostname | \`${{ inputs.hostname }}\` |"
             echo "| user | \`${{ inputs.username }}\` |"
             echo "| language | \`${{ inputs.language }}\` |"
@@ -775,12 +835,13 @@ jobs:
       - name: "Resolve Release Metadata"
         env:
           SUITE: ${{ inputs.distro_suite }}
-          DESKTOP: ${{ inputs.plasma_mobile && 'KDE Plasma Mobile' || inputs.desktop }}
+          DESKTOP: ${{ inputs.desktop }}
         run: |
           set -euo pipefail
           slug=$(printf '%s' "$DESKTOP" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]\+/-/g; s/-$//')
-          echo "TAG=ubuntu-${SUITE}-${slug}-r${{ github.run_number }}" >> "$GITHUB_ENV"
-          echo "TITLE=Ubuntu ${SUITE} · ${DESKTOP} (r${{ github.run_number }})" >> "$GITHUB_ENV"
+          stamp=$(date -u +%Y%m%d-%H%M)
+          echo "TAG=ubuntu-${SUITE}-${slug}-${stamp}" >> "$GITHUB_ENV"
+          echo "TITLE=Ubuntu ${SUITE} · ${DESKTOP} (${stamp:0:4}-${stamp:4:2}-${stamp:6:2} ${stamp:9:2}:${stamp:11:2} UTC)" >> "$GITHUB_ENV"
 
       - name: "Download Artifacts"
         uses: actions/download-artifact@v8
@@ -795,7 +856,7 @@ jobs:
           name: ${{ env.TITLE }}
           body: |
             - System: Ubuntu `${{ inputs.distro_suite }}`
-            - Desktop: `${{ inputs.plasma_mobile && 'KDE Plasma Mobile' || inputs.desktop }}`
+            - Desktop: `${{ inputs.desktop }}`
             - Hostname: `${{ inputs.hostname }}`
             - User: `${{ inputs.username }}`
             - Image size: `${{ inputs.image_size }}`

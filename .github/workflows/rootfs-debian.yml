@@ -917,8 +917,9 @@ jobs:
         run: |
           set -euo pipefail
           slug=$(printf '%s' "$DESKTOP" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]\+/-/g; s/-$//')
-          echo "TAG=debian-${SUITE}-${slug}-r${{ github.run_number }}" >> "$GITHUB_ENV"
-          echo "TITLE=Debian ${SUITE} · ${DESKTOP} (r${{ github.run_number }})" >> "$GITHUB_ENV"
+          stamp=$(date -u +%Y%m%d-%H%M)
+          echo "TAG=debian-${SUITE}-${slug}-${stamp}" >> "$GITHUB_ENV"
+          echo "TITLE=Debian ${SUITE} · ${DESKTOP} (${stamp:0:4}-${stamp:4:2}-${stamp:6:2} ${stamp:9:2}:${stamp:11:2} UTC)" >> "$GITHUB_ENV"
 
       - name: "Download Artifacts"
         uses: actions/download-artifact@v8
