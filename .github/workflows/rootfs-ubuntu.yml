@@ -113,7 +113,6 @@ jobs:
 
       - name: "Verify Arguments"
         run: |
-          set -euo pipefail
           if [[ "${{ inputs.image_size }}" =~ ^[0-9]+[MG]?$ ]]; then
             echo "✓ image_size=${{ inputs.image_size }}"
           else
@@ -139,7 +138,6 @@ jobs:
 
       - name: "Install Build Tools"
         run: |
-          set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y \
             debootstrap dosfstools mtools e2fsprogs util-linux \
@@ -164,7 +162,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set -euo pipefail
           mkdir -p debs
           REPO="${{ inputs.deb_repo }}"
           REL="${{ inputs.deb_release }}"
@@ -180,7 +177,6 @@ jobs:
       - name: "Download Extra .debs"
         if: ${{ inputs.extra_deb_urls != '' }}
         run: |
-          set -euo pipefail
           mkdir -p debs
           while IFS= read -r url; do
             [ -n "$url" ] || continue
@@ -192,7 +188,6 @@ jobs:
 
       - name: "Summarize Package Set"
         run: |
-          set -euo pipefail
           echo "  packages to install into the rootfs:"
           for f in debs/*.deb; do
             printf '    %-52s %s\n' "$(basename "$f")" "$(dpkg-deb -f "$f" Package Version Architecture | tr '\n' ' ')"
@@ -205,14 +200,12 @@ jobs:
 
       - name: "Create RootFS Image"
         run: |
-          set -euo pipefail
           truncate -s "${{ inputs.image_size }}" rootfs.img
           mkfs.ext4 -q -L linux rootfs.img
           echo "✓ rootfs.img created (${{ inputs.image_size }})"
 
       - name: "Mount RootFS Image"
         run: |
-          set -euo pipefail
           sudo mkdir -p "$ROOTFS_MOUNT"
           sudo mount -o loop rootfs.img "$ROOTFS_MOUNT"
           df -h "$ROOTFS_MOUNT"
@@ -220,7 +213,6 @@ jobs:
 
       - name: "Run Debootstrap (${{ inputs.distro_suite }})"
         run: |
-          set -euo pipefail
           sudo debootstrap \
             --arch=arm64 \
             --components=main,restricted,universe,multiverse \
@@ -232,7 +224,6 @@ jobs:
 
       - name: "Mount Virtual File Systems"
         run: |
-          set -euo pipefail
           sudo mount --bind /dev "$ROOTFS_MOUNT/dev"
           sudo mount --bind /dev/pts "$ROOTFS_MOUNT/dev/pts"
           sudo mount -t proc proc "$ROOTFS_MOUNT/proc"
@@ -250,7 +241,6 @@ jobs:
 
       - name: "Create ESP Image"
         run: |
-          set -euo pipefail
           truncate -s "${{ inputs.esp_size }}" esp.img
           mkfs.fat -S 4096 -n ESP esp.img
           python3 - <<'PY'
@@ -265,7 +255,6 @@ jobs:
 
       - name: "Mount ESP Image"
         run: |
-          set -euo pipefail
           sudo mkdir -p "$ESP_MOUNT"
           sudo mount -o loop esp.img "$ESP_MOUNT"
           esp_fstype=$(findmnt -n -o FSTYPE --target "$ESP_MOUNT")
@@ -283,7 +272,6 @@ jobs:
 
       - name: "Configure APT Sources"
         run: |
-          set -euo pipefail
           SUITE="${{ inputs.distro_suite }}"
           sudo tee "$ROOTFS_MOUNT/etc/apt/sources.list" >/dev/null <<SOURCES
           deb http://ports.ubuntu.com/ubuntu-ports/ ${SUITE} main restricted universe multiverse
@@ -314,7 +302,6 @@ jobs:
 
       - name: "Install Base Packages"
         run: |
-          set -euo pipefail
           sudo chroot "$ROOTFS_MOUNT" apt-get update
           pkgs="systemd systemd-sysv
             sudo vim nano wget curl rsync less
@@ -332,14 +319,12 @@ jobs:
 
       - name: "Use Upstream Regulatory Database"
         run: |
-          set -euo pipefail
           sudo chroot "$ROOTFS_MOUNT" update-alternatives --set regulatory.db \
             /lib/firmware/regulatory.db-upstream || true
           echo "✓ Regulatory database step done"
 
       - name: "Configure fstab"
         run: |
-          set -euo pipefail
           # The kernel postinst reads the "/" entry to write root= into
           # extlinux.conf; U-Boot looks the ESP up by the "esp" label.
           sudo tee "$ROOTFS_MOUNT/etc/fstab" >/dev/null <<EOF
@@ -352,7 +337,6 @@ jobs:
 
       - name: "Install All .deb Packages"
         run: |
-          set -euo pipefail
           shopt -s nullglob
           pkgs=(debs/*.deb)
           [ "${#pkgs[@]}" -gt 0 ] || { echo "::error::no .deb files collected"; exit 1; }
@@ -367,7 +351,6 @@ jobs:
 
       - name: "Assert ESP Payload"
         run: |
-          set -euo pipefail
           ESP="$ESP_MOUNT"
           echo "--- ESP tree ---"
           sudo find "$ESP" -mindepth 1 | sort
@@ -391,7 +374,6 @@ jobs:
 
       - name: "Set Hostname"
         run: |
-          set -euo pipefail
           echo "${{ inputs.hostname }}" | sudo tee "$ROOTFS_MOUNT/etc/hostname" >/dev/null
           grep -q "127.0.1.1.*${{ inputs.hostname }}" "$ROOTFS_MOUNT/etc/hosts" \
             || echo "127.0.1.1 ${{ inputs.hostname }}" | sudo tee -a "$ROOTFS_MOUNT/etc/hosts" >/dev/null
@@ -399,7 +381,6 @@ jobs:
 
       - name: "Configure Locale"
         run: |
-          set -euo pipefail
           LANG_CHOICE="${{ inputs.language }}"
           if [ "$LANG_CHOICE" = 'None (C.UTF-8)' ]; then
             echo "✓ System locale stays C.UTF-8"
@@ -415,7 +396,6 @@ jobs:
 
       - name: "Install Language Fonts"
         run: |
-          set -euo pipefail
           LANG_CHOICE="${{ inputs.language }}"
           pkgs=""
           case "$LANG_CHOICE" in
@@ -453,7 +433,6 @@ jobs:
 
       - name: "Create User"
         run: |
-          set -euo pipefail
           user_groups=""
           for g in sudo audio video render input netdev plugdev; do
             if sudo chroot "$ROOTFS_MOUNT" getent group "$g" >/dev/null; then
@@ -469,7 +448,6 @@ jobs:
         env:
           ROOTFS_PASSWORD: ${{ secrets.ROOTFS_PASSWORD }}
         run: |
-          set -euo pipefail
           if [ -z "${ROOTFS_PASSWORD:-}" ]; then
             ROOTFS_PASSWORD="password"
             echo "::warning::ROOTFS_PASSWORD secret not set, falling back to the insecure default 'password'"
@@ -487,7 +465,6 @@ jobs:
       - name: "Install GNOME"
         if: ${{ inputs.desktop == 'GNOME' }}
         run: |
-          set -euo pipefail
           sudo chroot "$ROOTFS_MOUNT" apt-get update
           sudo chroot "$ROOTFS_MOUNT" apt-get install -y \
             gnome-shell gnome-session gnome-terminal \
@@ -499,7 +476,6 @@ jobs:
       - name: "Install Phosh"
         if: ${{ inputs.desktop == 'Phosh' }}
         run: |
-          set -euo pipefail
           sudo chroot "$ROOTFS_MOUNT" apt-get update
           # noble's phosh-core (0.38) pairs with phog; resolute (0.52) with phrog.
           if [ "${{ inputs.distro_suite }}" = 'noble' ]; then
@@ -517,7 +493,6 @@ jobs:
       - name: "Install KDE Plasma Mobile"
         if: ${{ inputs.desktop == 'KDE Plasma Mobile' }}
         run: |
-          set -euo pipefail
           sudo chroot "$ROOTFS_MOUNT" apt-get update
           # Plasma 5.27 on noble uses Maliit; resolute ships Plasma 6.6.
           if [ "${{ inputs.distro_suite }}" = 'noble' ]; then
@@ -538,7 +513,6 @@ jobs:
       - name: "Install KDE Plasma"
         if: ${{ inputs.desktop == 'KDE Plasma' }}
         run: |
-          set -euo pipefail
           sudo chroot "$ROOTFS_MOUNT" apt-get update
           # Plasma 5.27 on noble uses Maliit; resolute ships Plasma 6.6.
           if [ "${{ inputs.distro_suite }}" = 'noble' ]; then
@@ -553,7 +527,6 @@ jobs:
 
       - name: "Purge Snap"
         run: |
-          set -euo pipefail
           sudo chroot "$ROOTFS_MOUNT" apt-get purge -y snapd 2>/dev/null || true
           sudo rm -rf "$ROOTFS_MOUNT/var/lib/snapd" "$ROOTFS_MOUNT/snap" "$ROOTFS_MOUNT/var/snap"
           echo "✓ snapd purged"
@@ -561,7 +534,6 @@ jobs:
       - name: "Configure GDM (GNOME)"
         if: ${{ inputs.desktop == 'GNOME' }}
         run: |
-          set -euo pipefail
           sudo mkdir -p "$ROOTFS_MOUNT/etc/gdm3"
           if [ "${{ inputs.autologin }}" = 'true' ]; then
             sudo tee "$ROOTFS_MOUNT/etc/gdm3/custom.conf" >/dev/null <<EOF
@@ -577,7 +549,6 @@ jobs:
       - name: "Configure greetd (Phosh)"
         if: ${{ inputs.desktop == 'Phosh' }}
         run: |
-          set -euo pipefail
           # phog (noble) and phrog (resolute) ship greetd drop-ins pointing at
           # their own config; only resolute needs phrog.toml written.
           # No [initial_session] even with autologin: bypassing the greeter
@@ -607,7 +578,6 @@ jobs:
       - name: "Configure SDDM (Plasma / Plasma Mobile)"
         if: ${{ inputs.desktop == 'KDE Plasma' || inputs.desktop == 'KDE Plasma Mobile' }}
         run: |
-          set -euo pipefail
           if [ "${{ inputs.desktop }}" = 'KDE Plasma Mobile' ]; then
             SESSION=plasma-mobile
           else
@@ -629,7 +599,6 @@ jobs:
       - name: "Configure SDDM HiDPI (Plasma / Plasma Mobile)"
         if: ${{ inputs.desktop == 'KDE Plasma' || inputs.desktop == 'KDE Plasma Mobile' }}
         run: |
-          set -euo pipefail
           sudo mkdir -p "$ROOTFS_MOUNT/etc/sddm.conf.d"
           sudo tee "$ROOTFS_MOUNT/etc/sddm.conf.d/10-hidpi.conf" >/dev/null <<'SDDM_EOF'
           [X11]
@@ -651,7 +620,6 @@ jobs:
 
       - name: "Enable Services"
         run: |
-          set -euo pipefail
           sudo chroot "$ROOTFS_MOUNT" bash -s <<'CHROOT_EOF'
           set -u
           enable() {
@@ -675,7 +643,6 @@ jobs:
 
       - name: "Fix Permissions"
         run: |
-          set -euo pipefail
           for p in /usr/bin/hexagonrpcd /usr/libexec/iio-sensor-proxy /usr/bin/monitor-sensor /usr/bin/ssccli; do
             if sudo test -f "$ROOTFS_MOUNT$p"; then
               sudo chmod 755 "$ROOTFS_MOUNT$p"
@@ -686,7 +653,6 @@ jobs:
 
       - name: "Sanity Check the RootFS"
         run: |
-          set -euo pipefail
           for p in /sbin/init /etc/fstab /usr/lib/modules /boot/efi; do
             sudo test -e "$ROOTFS_MOUNT$p" || { echo "::error::rootfs missing $p"; exit 1; }
           done
@@ -699,7 +665,6 @@ jobs:
 
       - name: "Clean Up"
         run: |
-          set -euo pipefail
           sudo chroot "$ROOTFS_MOUNT" apt-get clean || true
           sudo rm -rf "$ROOTFS_MOUNT/var/lib/apt/lists"/*
           sudo rm -f "$ROOTFS_MOUNT/usr/sbin/policy-rc.d"
@@ -709,7 +674,6 @@ jobs:
       - name: "Unmount Everything"
         if: always()
         run: |
-          set -euo pipefail
           sudo umount "$ESP_MOUNT"             2>/dev/null || true
           sudo umount "$ROOTFS_MOUNT/dev/pts"  2>/dev/null || true
           sudo umount "$ROOTFS_MOUNT/dev"      2>/dev/null || true
@@ -725,7 +689,6 @@ jobs:
 
       - name: "Convert to Sparse Images"
         run: |
-          set -euo pipefail
           img2simg rootfs.img rootfs.simg
           img2simg esp.img    esp.simg
           python3 - <<'PY'
@@ -753,7 +716,6 @@ jobs:
 
       - name: "Compress Images (rootfs 7z, esp xz)"
         run: |
-          set -euo pipefail
           p7z=$(command -v 7z || command -v 7zz)
           "$p7z" a -t7z -m0=lzma2 -mx=9 -mfb=273 -md=1024m -mmt=1 -v2047m rootfs.simg.7z rootfs.simg
           "$p7z" t rootfs.simg.7z.001
@@ -765,7 +727,6 @@ jobs:
 
       - name: "Checksums"
         run: |
-          set -euo pipefail
           sha256sum rootfs.simg.7z.* esp.simg.xz | tee SHA256SUMS
           echo "✓ Checksums generated"
 
@@ -837,7 +798,6 @@ jobs:
           SUITE: ${{ inputs.distro_suite }}
           DESKTOP: ${{ inputs.desktop }}
         run: |
-          set -euo pipefail
           slug=$(printf '%s' "$DESKTOP" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]\+/-/g; s/-$//')
           stamp=$(date -u +%Y%m%d-%H%M)
           echo "TAG=ubuntu-${SUITE}-${slug}-${stamp}" >> "$GITHUB_ENV"
