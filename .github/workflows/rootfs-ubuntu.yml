@@ -717,7 +717,7 @@ jobs:
       - name: "Compress Images (rootfs 7z, esp xz)"
         run: |
           p7z=$(command -v 7z || command -v 7zz)
-          "$p7z" a -t7z -m0=lzma2 -mx=9 -mfb=273 -md=1024m -mmt=4 -v2047m rootfs.simg.7z rootfs.simg
+          "$p7z" a -t7z -m0=lzma2 -mx=9 -mfb=273 -md=256m -mmt=4 -bsp1 -v2047m rootfs.simg.7z rootfs.simg
           "$p7z" t rootfs.simg.7z.001
           rm -f rootfs.simg
           xz -9e -T0 -v esp.simg
