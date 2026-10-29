@@ -67,7 +67,7 @@ rootfs 产物中还包含 `SHA256SUMS`，可以在刷机前校验镜像完整性
 | 参数 | 说明 | 可选值 | 默认值（Debian / Ubuntu） |
 |---|---|---|---|
 | **distro_suite** | 要安装的发行版版本。Debian `trixie` 为 Debian 13，`forky` 为 Debian 14，`sid` 为滚动开发版；Ubuntu `noble` 为 24.04 LTS，`resolute` 为 26.04，`stonking` 为 26.10。 | `trixie` / `forky` / `sid`；`noble` / `resolute` / `stonking` | `trixie` / `noble` |
-| **desktop** | 预装的桌面环境。Ubuntu 的 `KDE Plasma` 安装 Kubuntu 元包 `kubuntu-desktop`；选择 `server` 时不安装图形界面。 | `Phosh` / `KDE Plasma Mobile` / `KDE Plasma` / `GNOME` / `server` | `Phosh` / `KDE Plasma` |
+| **desktop** | 预装的桌面环境。Ubuntu 的 `KDE Plasma` 安装官方 Plasma 元包 `kde-plasma-desktop`；选择 `server` 时不安装图形界面。 | `Phosh` / `KDE Plasma Mobile` / `KDE Plasma` / `GNOME` / `server` | `Phosh` / `KDE Plasma` |
 | **autologin** | 是否自动登录创建的用户。GNOME 使用 GDM；KDE Plasma 与 Plasma Mobile 在 Debian `trixie` 和 Ubuntu 上使用 SDDM，在 Debian `forky` 及更新版本使用 plasma-login-manager；**Phosh 不适用**——它必须经过 greeter（Debian 为 `phrog`，Ubuntu `noble` 为 `phog`，`resolute` 及更新为 `phrog`），greetd 的 `initial_session` 会绕过 greeter 导致会话缺少 `XDG_CURRENT_DESKTOP`，GNOME 控制中心拒绝启动、系统没有「设置」应用。`server` 模式不适用。 | `true` / `false` | `true` |
 | **username** | 非 root 用户名。用户会加入系统中可用的 `sudo`、`audio`、`video`、`render`、`input`、`netdev`、`plugdev` 等用户组。 | 字符串 | `Redmi` |
 | **hostname** | 系统主机名。 | 字符串 | `marble-debian` / `marble-ubuntu` |
@@ -84,7 +84,7 @@ rootfs 产物中还包含 `SHA256SUMS`，可以在刷机前校验镜像完整性
 ### Ubuntu 构建说明
 
 - arm64 软件包来自 `ports.ubuntu.com` 的 `main`、`restricted`、`universe`、`multiverse`。Ubuntu 官方 Firefox 是 snap 封装，构建改为从 mozillateam PPA 安装 deb 版，并在最后清除 `snapd`；若该 PPA 缺少当前架构的构建，Firefox 安装失败只告警，不会中断构建。
-- `KDE Plasma` 对应 Kubuntu 的 `kubuntu-desktop`；`KDE Plasma Mobile` 与 `Phosh` 和 Debian 一样是独立选项。
+- `KDE Plasma` 对应官方 Plasma 的 `kde-plasma-desktop`，不使用 Kubuntu 元包；`KDE Plasma Mobile` 与 `Phosh` 和 Debian 一样是独立选项。
 - Phosh 的登录器按套件分流：`noble` 使用 `phog`（archive 中没有 `phrog`），`resolute`/`stonking` 使用 `phrog` 与 `squeekboard`。两者都由 `greetd` 启动，且不写 `initial_session`，因此 Phosh 下 `autologin` 不生效。
 - 虚拟键盘：`noble`（Plasma 5.27）使用 `maliit-keyboard`，`resolute`/`stonking`（Plasma 6.6+）使用 `plasma-keyboard`。Plasma 与 Plasma Mobile 在各套件中都使用 SDDM。
 

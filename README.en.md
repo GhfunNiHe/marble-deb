@@ -67,7 +67,7 @@ The following inputs are available when running either workflow through `workflo
 | Parameter | Description | Options | Default (Debian / Ubuntu) |
 |---|---|---|---|
 | **distro_suite** | Distribution release to install. Debian `trixie` is Debian 13, `forky` is Debian 14, and `sid` is the rolling development release; Ubuntu `noble` is 24.04 LTS, `resolute` is 26.04 and `stonking` is 26.10. | `trixie` / `forky` / `sid`; `noble` / `resolute` / `stonking` | `trixie` / `noble` |
-| **desktop** | Desktop environment to preinstall. On Ubuntu, `KDE Plasma` installs Kubuntu's `kubuntu-desktop`; select `server` to build without a graphical interface. | `Phosh` / `KDE Plasma Mobile` / `KDE Plasma` / `GNOME` / `server` | `Phosh` / `KDE Plasma` |
+| **desktop** | Desktop environment to preinstall. On Ubuntu, `KDE Plasma` installs the official Plasma meta-package `kde-plasma-desktop`; select `server` to build without a graphical interface. | `Phosh` / `KDE Plasma Mobile` / `KDE Plasma` / `GNOME` / `server` | `Phosh` / `KDE Plasma` |
 | **autologin** | Whether the created user should be logged in automatically. GNOME uses GDM; KDE Plasma and Plasma Mobile use SDDM on Debian `trixie` and Ubuntu, and plasma-login-manager on Debian `forky` and newer; **not applicable to Phosh**, which has to go through a greeter (Debian `phrog`; Ubuntu `noble` `phog`, `resolute` and newer `phrog`) — greetd's `initial_session` bypasses it and the session then misses `XDG_CURRENT_DESKTOP`, so gnome-control-center refuses to start and the phone has no Settings app. Not applicable to `server` mode. | `true` / `false` | `true` |
 | **username** | Name of the non-root user. The user is added to the available `sudo`, `audio`, `video`, `render`, `input`, `netdev`, and `plugdev` groups. | string | `Redmi` |
 | **hostname** | System hostname. | string | `marble-debian` / `marble-ubuntu` |
@@ -84,7 +84,7 @@ The following inputs are available when running either workflow through `workflo
 ### Ubuntu Build Notes
 
 - arm64 packages come from `main`, `restricted`, `universe`, and `multiverse` on `ports.ubuntu.com`. Ubuntu's official Firefox is a snap, so the build installs the deb from the mozillateam PPA and purges `snapd` afterwards; if that PPA lacks a build for the current architecture, the Firefox failure is only a warning and does not abort the build.
-- `KDE Plasma` maps to Kubuntu's `kubuntu-desktop`; `KDE Plasma Mobile` and `Phosh` are separate options, matching Debian.
+- `KDE Plasma` maps to the official Plasma meta-package `kde-plasma-desktop`, not Kubuntu's meta-package; `KDE Plasma Mobile` and `Phosh` are separate options, matching Debian.
 - The Phosh greeter depends on the suite: `noble` uses `phog` (the archive has no `phrog`), while `resolute`/`stonking` use `phrog` plus `squeekboard`. Both are started by `greetd` without `initial_session`, so `autologin` has no effect under Phosh.
 - Virtual keyboard: `noble` (Plasma 5.27) uses `maliit-keyboard`, and `resolute`/`stonking` (Plasma 6.6+) use `plasma-keyboard`. Plasma and Plasma Mobile use SDDM on all suites.
 
