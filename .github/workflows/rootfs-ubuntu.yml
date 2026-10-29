@@ -310,11 +310,12 @@ jobs:
             net-tools iproute2 usbutils kmod e2fsprogs dosfstools util-linux
             bluez zram-tools feedbackd qrtr-tools rmtfs tqftpserv
             libglib2.0-0t64 libprotobuf-c1 libqmi-glib5 libmbim-glib4 libyaml-0-2"
-          # hexagonrpcd only exists from resolute onwards.
-          if [ "${{ inputs.distro_suite }}" != 'noble' ]; then
-            pkgs="$pkgs hexagonrpcd"
-          fi
           sudo chroot "$ROOTFS_MOUNT" apt-get install -y $pkgs ${{ inputs.extra_packages }}
+          # hexagonrpcd only exists from resolute onwards. Install it alone:
+          # its Recommends (droid-juicer) has no marble config and hangs boot.
+          if [ "${{ inputs.distro_suite }}" != 'noble' ]; then
+            sudo chroot "$ROOTFS_MOUNT" apt-get install -y --no-install-recommends hexagonrpcd
+          fi
           echo "✓ Base packages installed"
 
       - name: "Use Upstream Regulatory Database"

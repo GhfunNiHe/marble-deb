@@ -303,10 +303,13 @@ jobs:
             net-tools iproute2 usbutils \
             kmod e2fsprogs dosfstools util-linux \
             bluez zram-tools \
-            hexagonrpcd feedbackd fastfetch \
+            feedbackd fastfetch \
             qrtr-tools rmtfs tqftpserv \
             libglib2.0-0 libprotobuf-c1 libqmi-glib5 libmbim-glib4 libyaml-0-2 \
             ${{ inputs.extra_packages }}
+          # droid-juicer (hexagonrpcd's Recommends) has no marble config and
+          # hangs first boot, so install hexagonrpcd without Recommends.
+          sudo chroot "$ROOTFS_MOUNT" apt-get install -y --no-install-recommends hexagonrpcd
           echo "✓ Base packages installed"
 
       - name: "Use Upstream Regulatory Database"
