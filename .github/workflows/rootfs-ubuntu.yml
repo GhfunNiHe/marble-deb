@@ -461,7 +461,7 @@ jobs:
         run: |
           sudo chroot "$ROOTFS_MOUNT" apt-get update
           sudo chroot "$ROOTFS_MOUNT" apt-get install -y \
-            gnome-shell gnome-session gnome-terminal \
+            gnome-shell gnome-session gnome-terminal ubuntu-session \
             gdm3 gnome-control-center gnome-backgrounds
           sudo chroot "$ROOTFS_MOUNT" apt-get install -y firefox \
             || echo "::warning::firefox not installed (snap is blocked, PPA may lack this arch)"
@@ -514,7 +514,8 @@ jobs:
           else
             keyboard=plasma-keyboard
           fi
-          sudo chroot "$ROOTFS_MOUNT" apt-get install -y kubuntu-desktop "$keyboard" konsole
+          sudo chroot "$ROOTFS_MOUNT" apt-get install -y \
+            kde-plasma-desktop plasma-nm sddm konsole pipewire-alsa "$keyboard"
           sudo chroot "$ROOTFS_MOUNT" apt-get install -y firefox \
             || echo "::warning::firefox not installed (snap is blocked, PPA may lack this arch)"
           echo "✓ KDE Plasma installed"
