@@ -305,11 +305,12 @@ jobs:
             bluez zram-tools \
             feedbackd fastfetch \
             qrtr-tools rmtfs tqftpserv \
-            libglib2.0-0 libprotobuf-c1 libqmi-glib5 libmbim-glib4 libyaml-0-2 \
+            libglib2.0-0t64 libprotobuf-c1 libqmi-glib5 libmbim-glib4 libyaml-0-2 \
             ${{ inputs.extra_packages }}
           # droid-juicer (hexagonrpcd's Recommends) has no marble config and
           # hangs first boot, so install hexagonrpcd without Recommends.
           sudo chroot "$ROOTFS_MOUNT" apt-get install -y --no-install-recommends hexagonrpcd
+          echo "SENSOR_DAEMON=hexagonrpcd" >> "$GITHUB_ENV"
           echo "✓ Base packages installed"
 
       - name: "Use Upstream Regulatory Database"
@@ -340,19 +341,12 @@ jobs:
       # only the NM profile is needed here. IPv6 prefix delegation from the
       # carrier means the address differs per boot - no static config.
 
-      - name: "Install All .deb Packages"
+      - name: "Install and Verify Device .debs"
+        env:
+          ROOTFS_MOUNT: /mnt/rootfs
+          DEB_DIR: debs
         run: |
-          shopt -s nullglob
-          pkgs=(debs/*.deb)
-          [ "${#pkgs[@]}" -gt 0 ] || { echo "::error::no .deb files collected"; exit 1; }
-          sudo cp "${pkgs[@]}" "$ROOTFS_MOUNT/tmp/"
-          sudo ls -lh "$ROOTFS_MOUNT/tmp/"*.deb
-          sudo chroot "$ROOTFS_MOUNT" bash -c "
-            apt-get update
-            apt-get install -y /tmp/*.deb 2>&1 || apt-get install -f -y
-            rm -f /tmp/*.deb
-          "
-          echo "✓ All .deb packages installed"
+          bash .github/scripts/install-device-debs.sh
 
       # ----------------------------------------------------------------
       # ESP assertions -- the postinst is the only thing that populates the
@@ -736,7 +730,7 @@ jobs:
             || echo "::warning::/sbin/init does not resolve to systemd"
           echo "--- kernel modules ---"
           sudo ls "$ROOTFS_MOUNT"/usr/lib/modules/
-          sudo test -s "$ROOTFS_MOUNT"/usr/share/linux-redmi-marble/kernel.release \
+          sudo test -s "$ROOTFS_MOUNT"/usr/share/linux-xiaomi-marble/kernel.release \
             || echo "::warning::kernel.release marker missing"
           echo "✓ RootFS sanity check passed"
 
@@ -848,6 +842,7 @@ jobs:
             echo "| hostname | \`${{ inputs.hostname }}\` |"
             echo "| user | \`${{ inputs.username }}\` |"
             echo "| language | \`${{ inputs.language }}\` |"
+            echo "| SSC sensor daemon | \`${SENSOR_DAEMON:-hexagonrpcd}\` |"
             if [ -s /tmp/language-fonts.txt ]; then
               echo "| fonts | \`$(tr -s ' ' < /tmp/language-fonts.txt)\` |"
             else

@@ -304,10 +304,17 @@ jobs:
             bluez zram-tools feedbackd qrtr-tools rmtfs tqftpserv
             libglib2.0-0t64 libprotobuf-c1 libqmi-glib5 libmbim-glib4 libyaml-0-2"
           sudo chroot "$ROOTFS_MOUNT" apt-get install -y $pkgs ${{ inputs.extra_packages }}
-          # hexagonrpcd only exists from resolute onwards. Install it alone:
-          # its Recommends (droid-juicer) has no marble config and hangs boot.
-          if [ "${{ inputs.distro_suite }}" != 'noble' ]; then
+          # hexagonrpcd is the SSC daemon. Ubuntu noble does not package it; keep
+          # the rootfs buildable but make the missing sensor stack explicit
+          # instead of silently pretending sensors work.
+          if sudo chroot "$ROOTFS_MOUNT" apt-cache show hexagonrpcd >/dev/null 2>&1; then
+            # Its Recommends (droid-juicer) has no marble config and hangs boot.
             sudo chroot "$ROOTFS_MOUNT" apt-get install -y --no-install-recommends hexagonrpcd
+            echo "SENSOR_DAEMON=hexagonrpcd" >> "$GITHUB_ENV"
+            echo "✓ hexagonrpcd installed"
+          else
+            echo "::warning::hexagonrpcd is not packaged for ${{ inputs.distro_suite }}; Qualcomm SSC sensors will be unavailable in this rootfs"
+            echo "SENSOR_DAEMON=missing" >> "$GITHUB_ENV"
           fi
           echo "✓ Base packages installed"
 
@@ -329,19 +336,12 @@ jobs:
           sudo cat "$ROOTFS_MOUNT/etc/fstab"
           echo "✓ fstab configured (root=PARTLABEL=${{ inputs.root_partition }})"
 
-      - name: "Install All .deb Packages"
+      - name: "Install and Verify Device .debs"
+        env:
+          ROOTFS_MOUNT: /mnt/rootfs
+          DEB_DIR: debs
         run: |
-          shopt -s nullglob
-          pkgs=(debs/*.deb)
-          [ "${#pkgs[@]}" -gt 0 ] || { echo "::error::no .deb files collected"; exit 1; }
-          sudo cp "${pkgs[@]}" "$ROOTFS_MOUNT/tmp/"
-          sudo ls -lh "$ROOTFS_MOUNT/tmp/"*.deb
-          sudo chroot "$ROOTFS_MOUNT" bash -c "
-            apt-get update
-            apt-get install -y /tmp/*.deb 2>&1 || apt-get install -f -y
-            rm -f /tmp/*.deb
-          "
-          echo "✓ All .deb packages installed"
+          bash .github/scripts/install-device-debs.sh
 
       - name: "Assert ESP Payload"
         run: |
@@ -654,7 +654,7 @@ jobs:
           test "$(sudo readlink -f "$ROOTFS_MOUNT/sbin/init")" = "$ROOTFS_MOUNT/usr/lib/systemd/systemd" \
             || echo "::warning::/sbin/init does not resolve to systemd"
           sudo ls "$ROOTFS_MOUNT"/usr/lib/modules/
-          sudo test -s "$ROOTFS_MOUNT"/usr/share/linux-redmi-marble/kernel.release \
+          sudo test -s "$ROOTFS_MOUNT"/usr/share/linux-xiaomi-marble/kernel.release \
             || echo "::warning::kernel.release marker missing"
           echo "✓ RootFS sanity check passed"
 
@@ -761,6 +761,7 @@ jobs:
             echo "| hostname | \`${{ inputs.hostname }}\` |"
             echo "| user | \`${{ inputs.username }}\` |"
             echo "| language | \`${{ inputs.language }}\` |"
+            echo "| SSC sensor daemon | \`${SENSOR_DAEMON:-unknown}\` |"
             if [ -s /tmp/language-fonts.txt ]; then
               echo "| fonts | \`$(tr -s ' ' < /tmp/language-fonts.txt)\` |"
             else
