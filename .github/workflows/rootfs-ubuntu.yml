@@ -304,17 +304,29 @@ jobs:
             bluez zram-tools feedbackd qrtr-tools rmtfs tqftpserv
             libglib2.0-0t64 libprotobuf-c1 libqmi-glib5 libmbim-glib4 libyaml-0-2"
           sudo chroot "$ROOTFS_MOUNT" apt-get install -y $pkgs ${{ inputs.extra_packages }}
-          # hexagonrpcd is the SSC daemon. Ubuntu noble does not package it; keep
-          # the rootfs buildable but make the missing sensor stack explicit
-          # instead of silently pretending sensors work.
+          # hexagonrpcd is the SSC daemon. Ubuntu noble has no archive package;
+          # it is supplied by the device release. Other Ubuntu suites install
+          # their archive copy here.
           if sudo chroot "$ROOTFS_MOUNT" apt-cache show hexagonrpcd >/dev/null 2>&1; then
             # Its Recommends (droid-juicer) has no marble config and hangs boot.
             sudo chroot "$ROOTFS_MOUNT" apt-get install -y --no-install-recommends hexagonrpcd
             echo "SENSOR_DAEMON=hexagonrpcd" >> "$GITHUB_ENV"
-            echo "✓ hexagonrpcd installed"
+            echo "✓ hexagonrpcd installed from the archive"
           else
-            echo "::warning::hexagonrpcd is not packaged for ${{ inputs.distro_suite }}; Qualcomm SSC sensors will be unavailable in this rootfs"
-            echo "SENSOR_DAEMON=missing" >> "$GITHUB_ENV"
+            local_hexagonrpc=0
+            for f in debs/hexagonrpcd_*.deb; do
+              if [ -e "$f" ]; then
+                local_hexagonrpc=1
+                break
+              fi
+            done
+            if [ "$local_hexagonrpc" -eq 1 ]; then
+              echo "✓ hexagonrpcd will be installed from the device release"
+              echo "SENSOR_DAEMON=hexagonrpcd-device-release" >> "$GITHUB_ENV"
+            else
+              echo "::warning::hexagonrpcd is not packaged for ${{ inputs.distro_suite }} and the device release does not carry it; Qualcomm SSC sensors will be unavailable in this rootfs"
+              echo "SENSOR_DAEMON=missing" >> "$GITHUB_ENV"
+            fi
           fi
           echo "✓ Base packages installed"
 
