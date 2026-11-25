@@ -164,6 +164,8 @@ env:
 jobs:
   build-rootfs:
     name: "Assemble RootFS"
+    permissions:
+      contents: read
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 120
 
