@@ -1,4 +1,5 @@
 name: Build Ubuntu RootFS
+run-name: Ubuntu ${{ inputs.distro_suite }} / ${{ inputs.desktop }}
 
 on:
   workflow_dispatch:
@@ -100,7 +101,7 @@ env:
 
 jobs:
   build-rootfs:
-    name: "Assemble RootFS"
+    name: Ubuntu ${{ inputs.distro_suite }} / ${{ inputs.desktop }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 120
 
