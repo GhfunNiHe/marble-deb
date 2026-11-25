@@ -62,7 +62,7 @@ concurrency:
 
 jobs:
   build-debian:
-    name: Debian ${{ matrix.suite }} / ${{ matrix.desktop }}
+    name: Build
     strategy:
       fail-fast: false
       matrix:
@@ -92,7 +92,7 @@ jobs:
       extra_packages: ''
 
   build-ubuntu:
-    name: Ubuntu ${{ matrix.suite }} / ${{ matrix.desktop }}
+    name: Build
     strategy:
       fail-fast: false
       matrix:

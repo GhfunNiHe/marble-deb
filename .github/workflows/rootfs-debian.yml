@@ -1,4 +1,5 @@
 name: Build Debian RootFS
+run-name: Debian ${{ inputs.distro_suite }} / ${{ inputs.desktop }}
 
 on:
   workflow_dispatch:
@@ -159,6 +160,7 @@ on:
 
 jobs:
   build-rootfs:
+    name: Build
     permissions:
       contents: read
     uses: ./.github/workflows/assemble-debian.yml
