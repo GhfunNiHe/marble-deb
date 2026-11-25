@@ -639,7 +639,7 @@ jobs:
           user = "_greetd"
           PHROG_EOF
           fi
-          sudo chroot "$ROOTFS_MOUNT" systemctl enable greetd
+          sudo chroot "$ROOTFS_MOUNT" systemctl --force enable greetd
           # graphical.target pulls display-manager.service, which greetd only
           # carries through its [Install] alias.
           sudo ln -sf /usr/lib/systemd/system/greetd.service \
