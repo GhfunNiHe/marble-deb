@@ -1,0 +1,198 @@
+name: Build All Desktop RootFS
+
+# Builds every supported desktop for every supported suite as one run:
+#   Debian trixie/forky/sid + Ubuntu noble/resolute/stonking
+#   x Phosh / KDE Plasma Mobile / KDE Plasma / GNOME
+#
+# The per-suite workflows are called with publish_release:false. Only after
+# all 24 builds succeed does this workflow publish one set of renamed assets
+# to the ProReleases repository. No secrets are passed to the called
+# workflows, so ROOTFS_PASSWORD stays empty and the image password remains
+# the existing default "password".
+#
+# Required repository secret: PRO_RELEASES_TOKEN
+#   PAT with contents:write on pro_releases_repo.
+
+on:
+  workflow_dispatch:
+    inputs:
+      deb_repo:
+        description: '发布设备 .deb 的仓库 / Repository that publishes the device .debs'
+        type: string
+        default: 'GhfunNiHe/marble-deb-packages'
+      deb_release:
+        description: '设备 .deb 的 Release 标签 / Device .deb release tag'
+        type: string
+        default: 'latest'
+      pro_releases_repo:
+        description: 'ProReleases 仓库（owner/repo）'
+        type: string
+        default: 'GhfunNiHe/ProReleases'
+      pro_releases_branch:
+        description: 'ProReleases 创建 tag 的目标分支'
+        type: string
+        default: 'main'
+      username:
+        description: '用户名 / Username'
+        type: string
+        default: 'Redmi'
+      language:
+        description: '系统语言 / System language'
+        type: string
+        default: 'None (C.UTF-8)'
+      image_size:
+        description: 'rootfs.img 大小 / rootfs.img size'
+        type: string
+        default: '10G'
+      esp_size:
+        description: 'esp.img 大小 / esp.img size'
+        type: string
+        default: '128M'
+      publish_release:
+        description: '全部成功后发布到 ProReleases'
+        type: boolean
+        default: true
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: all-desktops-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-debian:
+    name: Debian ${{ matrix.suite }} / ${{ matrix.desktop }}
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          - trixie
+          - forky
+          - sid
+        desktop:
+          - 'Phosh'
+          - 'KDE Plasma Mobile'
+          - 'KDE Plasma'
+          - 'GNOME'
+    uses: ./.github/workflows/rootfs-debian.yml
+    with:
+      distro_suite: ${{ matrix.suite }}
+      desktop: ${{ matrix.desktop }}
+      autologin: true
+      username: ${{ inputs.username }}
+      hostname: marble-debian
+      language: ${{ inputs.language }}
+      image_size: ${{ inputs.image_size }}
+      esp_size: ${{ inputs.esp_size }}
+      root_partition: linux
+      deb_repo: ${{ inputs.deb_repo }}
+      deb_release: ${{ inputs.deb_release }}
+      extra_deb_urls: ''
+      publish_release: false
+      extra_packages: ''
+
+  build-ubuntu:
+    name: Ubuntu ${{ matrix.suite }} / ${{ matrix.desktop }}
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          - noble
+          - resolute
+          - stonking
+        desktop:
+          - 'Phosh'
+          - 'KDE Plasma Mobile'
+          - 'KDE Plasma'
+          - 'GNOME'
+    uses: ./.github/workflows/rootfs-ubuntu.yml
+    with:
+      distro_suite: ${{ matrix.suite }}
+      desktop: ${{ matrix.desktop }}
+      autologin: true
+      username: ${{ inputs.username }}
+      hostname: marble-ubuntu
+      language: ${{ inputs.language }}
+      image_size: ${{ inputs.image_size }}
+      esp_size: ${{ inputs.esp_size }}
+      root_partition: linux
+      deb_repo: ${{ inputs.deb_repo }}
+      deb_release: ${{ inputs.deb_release }}
+      extra_deb_urls: ''
+      publish_release: false
+      extra_packages: ''
+
+  publish:
+    name: Publish to ProReleases
+    needs:
+      - build-debian
+      - build-ubuntu
+    if: ${{ inputs.publish_release }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      actions: read
+      contents: read
+
+    steps:
+      - name: "Require ProReleases token"
+        env:
+          TOKEN: ${{ secrets.PRO_RELEASES_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::PRO_RELEASES_TOKEN is not set; add a PAT with contents:write on ${{ inputs.pro_releases_repo }}"
+            exit 1
+          fi
+
+      - name: "Download all build artifacts"
+        uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          merge-multiple: false
+
+      - name: "Rename assets and generate checksums"
+        run: |
+          mkdir -p release
+          for dir in artifacts/*; do
+            [ -d "$dir" ] || continue
+            name=$(basename "$dir")
+            slug=$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]\+/-/g; s/-$//')
+            for f in "$dir"/*; do
+              [ -e "$f" ] || continue
+              base=$(basename "$f")
+              [ "$base" = "SHA256SUMS" ] && continue
+              cp "$f" "release/${slug}-${base}"
+            done
+          done
+          [ -n "$(find release -maxdepth 1 -type f -name '*.xz' -print -quit)" ] \
+            || { echo "::error::no ESP images collected"; exit 1; }
+          [ -n "$(find release -maxdepth 1 -type f -name '*.7z.*' -print -quit)" ] \
+            || { echo "::error::no rootfs volumes collected"; exit 1; }
+          cd release
+          sha256sum * > SHA256SUMS
+          ls -lh
+
+      - name: "Publish to ProReleases"
+        uses: softprops/action-gh-release@v2
+        with:
+          repository: ${{ inputs.pro_releases_repo }}
+          token: ${{ secrets.PRO_RELEASES_TOKEN }}
+          tag_name: marble-all-desktops-${{ github.run_id }}
+          name: Marble full-desktop RootFS (${{ github.run_id }})
+          target_commitish: ${{ inputs.pro_releases_branch }}
+          body: |
+            Full desktop matrix for Xiaomi marble.
+
+            - Debian: `trixie`, `forky`, `sid`
+            - Ubuntu: `noble`, `resolute`, `stonking`
+            - Desktops: `Phosh`, `KDE Plasma Mobile`, `KDE Plasma`, `GNOME`
+            - Default user password: `password`
+
+            `rootfs` assets are split 7z volumes; `esp` assets are xz.
+            Flash with `fastboot flash esp <esp>.simg.xz` after decompression,
+            and `fastboot flash linux <rootfs>.simg` after 7z extraction.
+          files: release/*
+          fail_on_unmatched_files: true
+          overwrite_files: false

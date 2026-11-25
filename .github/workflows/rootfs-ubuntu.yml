@@ -94,6 +94,69 @@ on:
         type: string
         default: ''
 
+  workflow_call:
+    inputs:
+      distro_suite:
+        description: 'Ubuntu version'
+        type: string
+        default: 'noble'
+      desktop:
+        description: 'Desktop environment'
+        type: string
+        default: 'KDE Plasma'
+      autologin:
+        description: 'Autologin'
+        type: boolean
+        default: true
+      username:
+        description: 'Username'
+        type: string
+        default: 'Redmi'
+      hostname:
+        description: 'Hostname'
+        type: string
+        default: 'marble-ubuntu'
+      language:
+        description: 'System language'
+        type: string
+        default: 'None (C.UTF-8)'
+      image_size:
+        description: 'rootfs.img size'
+        type: string
+        default: '10G'
+      esp_size:
+        description: 'esp.img size'
+        type: string
+        default: '128M'
+      root_partition:
+        description: 'Rootfs partition label'
+        type: string
+        default: 'linux'
+      deb_repo:
+        description: 'Device .deb repository'
+        type: string
+        default: 'GhfunNiHe/marble-deb-packages'
+      deb_release:
+        description: 'Device .deb release tag'
+        type: string
+        default: 'latest'
+      extra_deb_urls:
+        description: 'Extra .deb URLs'
+        type: string
+        default: ''
+      publish_release:
+        description: 'Publish a per-image release'
+        type: boolean
+        default: false
+      extra_packages:
+        description: 'Extra packages'
+        type: string
+        default: ''
+    secrets:
+      ROOTFS_PASSWORD:
+        description: 'RootFS password; empty falls back to the workflow default'
+        required: false
+
 env:
   ROOTFS_MOUNT: /mnt/rootfs
   ESP_MOUNT: /mnt/rootfs/boot/efi
