@@ -151,7 +151,7 @@ jobs:
               [ -e "$f" ] || continue
               base=$(basename "$f")
               [ "$base" = "SHA256SUMS" ] && continue
-              cp "$f" "release/${slug}-${base}"
+              mv -- "$f" "release/${slug}-${base}"
             done
           done
           [ -n "$(find release -maxdepth 1 -type f -name '*.xz' -print -quit)" ] \
