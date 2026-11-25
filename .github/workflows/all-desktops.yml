@@ -4,9 +4,8 @@ name: Build All Desktop RootFS
 #   Debian trixie/forky/sid + Ubuntu noble/resolute/stonking
 #   x Phosh / KDE Plasma Mobile / KDE Plasma / GNOME
 #
-# The per-suite workflows are called with publish_release:false. Only after
-# all 24 builds succeed does this workflow publish one set of renamed assets
-# as a GitHub pre-release in this repository. No secrets are passed to the
+# After all 24 builds succeed, publish their assets in a single GitHub
+# pre-release in this repository. No secrets are passed to the
 # called workflows, so ROOTFS_PASSWORD stays empty and the image password
 # remains the existing default "password".
 
@@ -44,7 +43,7 @@ on:
 
 permissions:
   actions: read
-  contents: write
+  contents: read
 
 concurrency:
   group: all-desktops-${{ github.ref }}
@@ -65,7 +64,7 @@ jobs:
           - 'KDE Plasma Mobile'
           - 'KDE Plasma'
           - 'GNOME'
-    uses: ./.github/workflows/rootfs-debian.yml
+    uses: ./.github/workflows/assemble-debian.yml
     with:
       distro_suite: ${{ matrix.suite }}
       desktop: ${{ matrix.desktop }}
@@ -79,7 +78,6 @@ jobs:
       deb_repo: ${{ inputs.deb_repo }}
       deb_release: ${{ inputs.deb_release }}
       extra_deb_urls: ''
-      publish_release: false
       extra_packages: ''
 
   build-ubuntu:
@@ -96,7 +94,7 @@ jobs:
           - 'KDE Plasma Mobile'
           - 'KDE Plasma'
           - 'GNOME'
-    uses: ./.github/workflows/rootfs-ubuntu.yml
+    uses: ./.github/workflows/assemble-ubuntu.yml
     with:
       distro_suite: ${{ matrix.suite }}
       desktop: ${{ matrix.desktop }}
@@ -110,7 +108,6 @@ jobs:
       deb_repo: ${{ inputs.deb_repo }}
       deb_release: ${{ inputs.deb_release }}
       extra_deb_urls: ''
-      publish_release: false
       extra_packages: ''
 
   publish:
