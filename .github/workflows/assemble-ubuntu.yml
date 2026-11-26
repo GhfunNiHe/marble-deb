@@ -35,6 +35,10 @@ on:
         description: 'esp.img size'
         type: string
         default: '128M'
+      upload_esp:
+        description: 'Upload the ESP image artifact'
+        type: boolean
+        default: true
       root_partition:
         description: 'Rootfs partition label'
         type: string
@@ -702,7 +706,11 @@ jobs:
 
       - name: "Checksums"
         run: |
-          sha256sum rootfs.simg.7z.* esp.simg.xz | tee SHA256SUMS
+          files=(rootfs.simg.7z.*)
+          if [ "${{ inputs.upload_esp }}" = true ]; then
+            files+=(esp.simg.xz)
+          fi
+          sha256sum "${files[@]}" | tee SHA256SUMS
           echo "✓ Checksums generated"
 
       # ----------------------------------------------------------------
@@ -721,6 +729,7 @@ jobs:
           if-no-files-found: error
 
       - name: "Upload ESP Image"
+        if: ${{ inputs.upload_esp }}
         uses: actions/upload-artifact@v7
         with:
           name: esp-${{ inputs.distro_suite }}-${{ inputs.desktop }}
@@ -758,3 +767,4 @@ jobs:
             echo "fastboot flash linux rootfs.simg"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+

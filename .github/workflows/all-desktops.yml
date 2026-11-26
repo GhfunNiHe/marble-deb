@@ -85,6 +85,7 @@ jobs:
       language: ${{ inputs.language }}
       image_size: ${{ inputs.image_size }}
       esp_size: ${{ inputs.esp_size }}
+      upload_esp: ${{ matrix.suite == 'trixie' && matrix.desktop == 'Phosh' }}
       root_partition: linux
       deb_repo: ${{ inputs.deb_repo }}
       deb_release: ${{ inputs.deb_release }}
@@ -115,6 +116,7 @@ jobs:
       language: ${{ inputs.language }}
       image_size: ${{ inputs.image_size }}
       esp_size: ${{ inputs.esp_size }}
+      upload_esp: false
       root_partition: linux
       deb_repo: ${{ inputs.deb_repo }}
       deb_release: ${{ inputs.deb_release }}
@@ -143,7 +145,8 @@ jobs:
       - name: "Rename assets and generate checksums"
         run: |
           mkdir -p release
-          for dir in artifacts/*; do
+          mv -- artifacts/esp-trixie-Phosh/esp.simg.xz release/esp.simg.xz
+          for dir in artifacts/rootfs-*; do
             [ -d "$dir" ] || continue
             name=$(basename "$dir")
             slug=$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]\+/-/g; s/-$//')
@@ -154,7 +157,7 @@ jobs:
               mv -- "$f" "release/${slug}-${base}"
             done
           done
-          [ -n "$(find release -maxdepth 1 -type f -name '*.xz' -print -quit)" ] \
+          [ -s release/esp.simg.xz ] \
             || { echo "::error::no ESP images collected"; exit 1; }
           [ -n "$(find release -maxdepth 1 -type f -name '*.7z.*' -print -quit)" ] \
             || { echo "::error::no rootfs volumes collected"; exit 1; }
@@ -177,9 +180,11 @@ jobs:
             - Desktops: `Phosh`, `KDE Plasma Mobile`, `KDE Plasma`, `GNOME`
             - Default user password: `password`
 
-            `rootfs` assets are split 7z volumes; `esp` assets are xz.
-            Flash with `fastboot flash esp <esp>.simg.xz` after decompression,
+            `rootfs` assets are split 7z volumes; `esp.simg.xz` is shared by all systems and desktops.
+            Flash with `fastboot flash esp esp.simg` after xz decompression,
             and `fastboot flash linux <rootfs>.simg` after 7z extraction.
           files: release/*
+          preserve_order: true
           fail_on_unmatched_files: true
           overwrite_files: false
+
