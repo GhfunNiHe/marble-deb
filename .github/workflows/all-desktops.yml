@@ -19,7 +19,7 @@ on:
       deb_release:
         description: '设备 .deb 的 Release 标签 / Device .deb release tag'
         type: string
-        default: 'latest'
+        default: 'apt'
       username:
         description: '用户名 / Username'
         type: string

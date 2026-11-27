@@ -76,9 +76,9 @@ on:
         default: 'GhfunNiHe/marble-deb-packages'
 
       deb_release:
-        description: '拉取 .deb 的 Release 标签（"latest" = 最新版本） / Release tag to pull .debs from ("latest" = newest release)'
+        description: '拉取 .deb 的 Release 标签（apt = 滚动归档） / Release tag to pull .debs from (apt = rolling archive)'
         type: string
-        default: 'latest'
+        default: 'apt'
 
       extra_deb_urls:
         description: '额外 .deb 链接，每行一个（可选） / Extra .deb URLs, one per line (optional)'
@@ -140,7 +140,7 @@ on:
       deb_release:
         description: 'Device .deb release tag'
         type: string
-        default: 'latest'
+        default: 'apt'
       extra_deb_urls:
         description: 'Extra .deb URLs'
         type: string
