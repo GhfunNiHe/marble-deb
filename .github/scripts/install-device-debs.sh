@@ -46,7 +46,7 @@ REQUIRED_PACKAGES=(
     libhexagonrpc0.4
     libssc
     iio-sensor-proxy-ssc
-    libva-v4l2
+    libva-v4l2-iris
 )
 
 fail() {
