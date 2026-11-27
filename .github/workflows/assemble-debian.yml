@@ -135,7 +135,12 @@ jobs:
         run: |
           mkdir -p debs
           if [ "$DEB_RELEASE" = latest ]; then
-            DEB_RELEASE=$(gh release view --repo "$DEB_REPO" --json tagName -q .tagName)
+            DEB_RELEASE=$(gh api --paginate "repos/$DEB_REPO/releases?per_page=100" \
+              | jq -s -r '[add[] | select(.draft | not) | select(.tag_name | startswith("marble-deb-"))] | sort_by(.published_at) | last | .tag_name // empty')
+            if [ -z "$DEB_RELEASE" ]; then
+              echo "::error::no marble-deb-* release found in $DEB_REPO"
+              exit 1
+            fi
           fi
           echo "  source: $DEB_REPO @ $DEB_RELEASE"
           gh release download "$DEB_RELEASE" --repo "$DEB_REPO" --pattern '*.deb' --dir debs --clobber
