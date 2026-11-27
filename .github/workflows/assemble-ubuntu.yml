@@ -139,6 +139,34 @@ jobs:
           ls -lh debs
           echo "✓ Device .debs downloaded"
 
+      # Noble's archive has libmbim 1.31.2, below ModemManager's 1.32 floor.
+      # Pull the unmodified 1.32.0 build from the dedicated release and
+      # replace any older device-release copy by binary package name before
+      # install-device-debs.sh classifies the set. Other suites keep their
+      # archive copy; the installer excludes the device-release debs there.
+      - name: "Download Noble libmbim"
+        if: ${{ inputs.distro_suite == 'noble' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p noble-debs
+          gh release download ubuntu-noble --repo "${{ inputs.deb_repo }}" \
+            --pattern 'libmbim-glib4_*.deb' \
+            --pattern 'libmbim-proxy_*.deb' \
+            --pattern 'libmbim-utils_*.deb' --dir noble-debs --clobber
+          for f in noble-debs/*.deb; do
+            pkg=$(dpkg-deb -f "$f" Package)
+            for old in debs/*.deb; do
+              if [ "$(dpkg-deb -f "$old" Package)" = "$pkg" ]; then
+                echo "  replacing device $pkg: $(basename "$old")"
+                rm -f "$old"
+              fi
+            done
+            cp -f "$f" debs/
+          done
+          echo "  libmbim source: ${{ inputs.deb_repo }} @ ubuntu-noble"
+          ls -lh debs/libmbim-*.deb
+
       - name: "Download Extra .debs"
         if: ${{ inputs.extra_deb_urls != '' }}
         run: |
@@ -270,36 +298,12 @@ jobs:
           sudo chroot "$ROOTFS_MOUNT" apt-get update
           pkgs="systemd systemd-sysv
             sudo vim nano wget curl rsync less
-            network-manager openssh-server wpasupplicant dbus
+            openssh-server wpasupplicant dbus
             ca-certificates chrony iw lm-sensors wireless-regdb
             net-tools iproute2 usbutils kmod e2fsprogs dosfstools util-linux
             bluez zram-tools feedbackd qrtr-tools rmtfs tqftpserv
             libglib2.0-0t64 libprotobuf-c1 libqmi-glib5 libmbim-glib4 libyaml-0-2"
           sudo chroot "$ROOTFS_MOUNT" apt-get install -y $pkgs ${{ inputs.extra_packages }}
-          # hexagonrpcd is the SSC daemon. Ubuntu noble has no archive package;
-          # it is supplied by the device release. Other Ubuntu suites install
-          # their archive copy here.
-          if sudo chroot "$ROOTFS_MOUNT" apt-cache show hexagonrpcd >/dev/null 2>&1; then
-            # Its Recommends (droid-juicer) has no marble config and hangs boot.
-            sudo chroot "$ROOTFS_MOUNT" apt-get install -y --no-install-recommends hexagonrpcd
-            echo "SENSOR_DAEMON=hexagonrpcd" >> "$GITHUB_ENV"
-            echo "✓ hexagonrpcd installed from the archive"
-          else
-            local_hexagonrpc=0
-            for f in debs/hexagonrpcd_*.deb; do
-              if [ -e "$f" ]; then
-                local_hexagonrpc=1
-                break
-              fi
-            done
-            if [ "$local_hexagonrpc" -eq 1 ]; then
-              echo "✓ hexagonrpcd will be installed from the device release"
-              echo "SENSOR_DAEMON=hexagonrpcd-device-release" >> "$GITHUB_ENV"
-            else
-              echo "::warning::hexagonrpcd is not packaged for ${{ inputs.distro_suite }} and the device release does not carry it; Qualcomm SSC sensors will be unavailable in this rootfs"
-              echo "SENSOR_DAEMON=missing" >> "$GITHUB_ENV"
-            fi
-          fi
           echo "✓ Base packages installed"
 
       - name: "Use Upstream Regulatory Database"
@@ -750,7 +754,7 @@ jobs:
             echo "| hostname | \`${{ inputs.hostname }}\` |"
             echo "| user | \`${{ inputs.username }}\` |"
             echo "| language | \`${{ inputs.language }}\` |"
-            echo "| SSC sensor daemon | \`${SENSOR_DAEMON:-unknown}\` |"
+            echo "| SSC sensor daemon | \`hexagonrpcd (device release)\` |"
             if [ -s /tmp/language-fonts.txt ]; then
               echo "| fonts | \`$(tr -s ' ' < /tmp/language-fonts.txt)\` |"
             else
