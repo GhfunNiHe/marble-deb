@@ -168,6 +168,34 @@ jobs:
           ls -lh debs
           echo "✓ Device .debs downloaded"
 
+      # Noble's archive has libmbim 1.31.2, below ModemManager's 1.32 floor.
+      # Pull the unmodified 1.32.0 build from the dedicated release and
+      # replace any older device-release copy by binary package name before
+      # install-device-debs.sh classifies the set. Other suites keep their
+      # archive copy; the installer excludes the device-release debs there.
+      - name: "Download Noble libmbim"
+        if: ${{ inputs.distro_suite == 'noble' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p noble-debs
+          gh release download ubuntu-noble --repo "${{ inputs.deb_repo }}" \
+            --pattern 'libmbim-glib4_*.deb' \
+            --pattern 'libmbim-proxy_*.deb' \
+            --pattern 'libmbim-utils_*.deb' --dir noble-debs --clobber
+          for f in noble-debs/*.deb; do
+            pkg=$(dpkg-deb -f "$f" Package)
+            for old in debs/*.deb; do
+              if [ "$(dpkg-deb -f "$old" Package)" = "$pkg" ]; then
+                echo "  replacing device $pkg: $(basename "$old")"
+                rm -f "$old"
+              fi
+            done
+            cp -f "$f" debs/
+          done
+          echo "  libmbim source: ${{ inputs.deb_repo }} @ ubuntu-noble"
+          ls -lh debs/libmbim-*.deb
+
       - name: "Download Extra .debs"
         if: ${{ inputs.extra_deb_urls != '' }}
         run: |
