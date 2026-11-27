@@ -160,7 +160,12 @@ jobs:
           REPO="${{ inputs.deb_repo }}"
           REL="${{ inputs.deb_release }}"
           if [ "$REL" = "latest" ]; then
-            REL="$(gh release view --repo "$REPO" --json tagName -q .tagName)"
+            REL="$(gh api --paginate "repos/$REPO/releases?per_page=100" \
+              | jq -s -r '[add[] | select(.draft | not) | select(.tag_name | startswith("marble-deb-"))] | sort_by(.published_at) | last | .tag_name // empty')"
+            if [ -z "$REL" ]; then
+              echo "::error::no marble-deb-* release found in $REPO"
+              exit 1
+            fi
           fi
           echo "  source: $REPO @ $REL"
           gh release download "$REL" --repo "$REPO" --pattern '*.deb' --dir debs --clobber
