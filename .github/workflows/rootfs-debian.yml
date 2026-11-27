@@ -310,10 +310,6 @@ jobs:
             qrtr-tools rmtfs tqftpserv \
             libglib2.0-0t64 libprotobuf-c1 libqmi-glib5 libmbim-glib4 libyaml-0-2 \
             ${{ inputs.extra_packages }}
-          # droid-juicer (hexagonrpcd's Recommends) has no marble config and
-          # hangs first boot, so install hexagonrpcd without Recommends.
-          sudo chroot "$ROOTFS_MOUNT" apt-get install -y --no-install-recommends hexagonrpcd
-          echo "SENSOR_DAEMON=hexagonrpcd" >> "$GITHUB_ENV"
           echo "✓ Base packages installed"
 
       - name: "Select matching Debian NetworkManager packages"
@@ -879,7 +875,7 @@ jobs:
             echo "| hostname | \`${{ inputs.hostname }}\` |"
             echo "| user | \`${{ inputs.username }}\` |"
             echo "| language | \`${{ inputs.language }}\` |"
-            echo "| SSC sensor daemon | \`${SENSOR_DAEMON:-hexagonrpcd}\` |"
+            echo "| SSC sensor daemon | \`hexagonrpcd (device release)\` |"
             if [ -s /tmp/language-fonts.txt ]; then
               echo "| fonts | \`$(tr -s ' ' < /tmp/language-fonts.txt)\` |"
             else

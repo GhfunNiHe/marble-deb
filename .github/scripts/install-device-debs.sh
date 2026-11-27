@@ -29,6 +29,8 @@ STAGE_DIR=/tmp/device-debs
 # marble-device-support (libqmi >= 1.39.1).
 LIBMBIM_MIN_VERSION=1.32.0
 LIBQMI_MIN_VERSION=1.39.1
+# First device release that exposes sns_reg_version to the sensor DSP.
+HEXAGONRPC_MIN_VERSION=0.4.0-2marble1
 
 # These packages must be present in every release. libmbim is handled
 # separately because a newer target archive may replace the local copy.
@@ -40,6 +42,8 @@ REQUIRED_PACKAGES=(
     libmm-glib0
     libqmi-glib5
     libqmi-proxy
+    hexagonrpcd
+    libhexagonrpc0.4
     libssc
     iio-sensor-proxy-ssc
     libva-v4l2
@@ -111,6 +115,9 @@ for required in "${REQUIRED_PACKAGES[@]}"; do
         || fail "release is missing required package: $required"
 done
 
+dpkg --compare-versions "${pkg_version[hexagonrpcd]}" ge "$HEXAGONRPC_MIN_VERSION" \
+    || fail "hexagonrpcd ${pkg_version[hexagonrpcd]} lacks the marble sensor registry fix; need $HEXAGONRPC_MIN_VERSION or newer"
+
 # Explicit classification: -dev/-doc/-dbgsym packages are build or debug
 # artefacts. Everything else in the release is a runtime package and is
 # installed; this keeps libqmi-utils, libqmi-proxy, gir data and libssc (which
@@ -158,39 +165,24 @@ if [ "$skip_local_libmbim" -eq 0 ]; then
     done
 fi
 
-# hexagonrpcd is the SSC sensor daemon. Ubuntu noble has no archive package;
-# Debian and the other Ubuntu suites do. Use the distribution copy whenever a
-# candidate exists and only require the local backport where it is absent.
-skip_local_hexagonrpc=0
-hexagonrpc_candidate="(none)"
-if run_target apt-cache show hexagonrpcd >/dev/null 2>&1; then
-    hexagonrpc_candidate=$(run_target apt-cache policy hexagonrpcd \
-        | awk '/Candidate:/ { print $2; exit }')
-    if [ -n "$hexagonrpc_candidate" ] && [ "$hexagonrpc_candidate" != "(none)" ]; then
-        skip_local_hexagonrpc=1
-    fi
-fi
-
-if [ "$skip_local_hexagonrpc" -eq 0 ]; then
-    for required in hexagonrpcd libhexagonrpc0.4; do
-        [ -n "${pkg_version[$required]+x}" ] \
-            || fail "$target_name has no hexagonrpcd archive candidate, but the release does not contain $required; SSC sensors cannot be installed"
-    done
-fi
-
 selected=()
 for name in "${install_names[@]}"; do
     case "$name" in
+        callaudiod)
+            # Desktops install WirePlumber later. Ask target APT to keep it
+            # alongside this daemon, using the release DEB's actual dependencies.
+            probe_deb=$(run_target mktemp --suffix=.deb /tmp/callaudiod.XXXXXXXX)
+            as_root install -m 0644 -- "${pkg_deb[$name]}" "$ROOTFS_MOUNT$probe_deb"
+            if run_target apt-get -s --no-remove install wireplumber "$probe_deb" >/dev/null 2>&1; then
+                selected+=("$name")
+            else
+                excluded+=("$name (target APT cannot install the release daemon alongside WirePlumber without removing packages)")
+            fi
+            run_target rm -f -- "$probe_deb"
+            ;;
         libmbim*)
             if [ "$skip_local_libmbim" -eq 1 ]; then
                 excluded+=("$name (target archive already provides libmbim >= $LIBMBIM_MIN_VERSION)")
-            else
-                selected+=("$name")
-            fi
-            ;;
-        hexagonrpc*|libhexagonrpc*)
-            if [ "$skip_local_hexagonrpc" -eq 1 ]; then
-                excluded+=("$name (target archive already provides hexagonrpcd)")
             else
                 selected+=("$name")
             fi
@@ -335,21 +327,6 @@ libqmi_version=$(run_target dpkg-query -W -f='${Version}' libqmi-glib5) \
     || fail "libqmi-glib5 is not installed"
 dpkg --compare-versions "$libqmi_version" ge "$LIBQMI_MIN_VERSION" \
     || fail "libqmi-glib5 $libqmi_version is older than $LIBQMI_MIN_VERSION"
-
-status=$(run_target dpkg-query -W -f='${db:Status-Abbrev}' hexagonrpcd 2>/dev/null) \
-    || fail "hexagonrpcd is not installed; SSC sensors cannot work"
-[ "$status" = "ii " ] \
-    || fail "hexagonrpcd is not fully installed (state: '$status')"
-
-# Only the local 0.4 backport ships libhexagonrpc0.4. Debian trixie uses
-# libhexagonrpc0.3 from its archive, so do not hardcode the library package
-# name for archive installs; apt-get check/dpkg --audit already verify it.
-if [ "$skip_local_hexagonrpc" -eq 0 ]; then
-    status=$(run_target dpkg-query -W -f='${db:Status-Abbrev}' libhexagonrpc0.4 2>/dev/null) \
-        || fail "libhexagonrpc0.4 is not installed; local hexagonrpcd cannot run"
-    [ "$status" = "ii " ] \
-        || fail "libhexagonrpc0.4 is not fully installed (state: '$status')"
-fi
 
 krel=$(run_target cat /usr/share/linux-xiaomi-marble/kernel.release) \
     || fail "kernel release marker is missing"
