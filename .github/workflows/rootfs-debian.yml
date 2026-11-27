@@ -163,13 +163,11 @@ jobs:
           DEB_RELEASE: ${{ inputs.deb_release }}
         run: |
           mkdir -p debs
-          tag=()
-          if [ "$DEB_RELEASE" != latest ]; then tag=("$DEB_RELEASE"); fi
-          release="$RUNNER_TEMP/device-release.json"
-          gh release view "${tag[@]}" --repo "$DEB_REPO" --json tagName,assets > "$release"
-          tag_name=$(jq -er .tagName "$release")
-          echo "  source: $DEB_REPO @ $tag_name"
-          gh release download "$tag_name" --repo "$DEB_REPO" --pattern '*.deb' --dir debs --clobber
+          if [ "$DEB_RELEASE" = latest ]; then
+            DEB_RELEASE=$(gh release view --repo "$DEB_REPO" --json tagName -q .tagName)
+          fi
+          echo "  source: $DEB_REPO @ $DEB_RELEASE"
+          gh release download "$DEB_RELEASE" --repo "$DEB_REPO" --pattern '*.deb' --dir debs --clobber
           echo "  downloaded:"
           ls -lh debs
           echo "✓ Device .debs downloaded"
@@ -299,7 +297,7 @@ jobs:
           sudo chroot "$ROOTFS_MOUNT" apt-get install -y \
             systemd systemd-sysv \
             sudo vim nano wget curl rsync less \
-            network-manager openssh-server \
+            openssh-server \
             wpasupplicant dbus \
             ca-certificates chrony \
             iw lm-sensors wireless-regdb \
@@ -311,40 +309,6 @@ jobs:
             libglib2.0-0t64 libprotobuf-c1 libqmi-glib5 libmbim-glib4 libyaml-0-2 \
             ${{ inputs.extra_packages }}
           echo "✓ Base packages installed"
-
-      - name: "Select matching Debian NetworkManager packages"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DEB_REPO: ${{ inputs.deb_repo }}
-        run: |
-          base=$(sudo chroot "$ROOTFS_MOUNT" dpkg-query -W -f='${source:Version}' network-manager)
-          bundle="network-manager-debian_${base}_arm64.tar"
-          release="$RUNNER_TEMP/device-release.json"
-          if ! jq -e --arg name "$bundle" 'any(.assets[]; .name == $name)' "$release" >/dev/null; then
-            echo "Using Debian NetworkManager $base from the target archive."
-            exit 0
-          fi
-
-          tag_name=$(jq -er .tagName "$release")
-          gh release download "$tag_name" --repo "$DEB_REPO" --pattern "$bundle" --output "$RUNNER_TEMP/$bundle"
-          stage=$(mktemp -d "$ROOTFS_MOUNT/tmp/marble-network-manager.XXXXXXXX")
-          trap 'rm -rf -- "$stage"' EXIT
-          tar -xf "$RUNNER_TEMP/$bundle" -C "$stage"
-          files=()
-          for name in libnm0 network-manager network-manager-tui; do
-            matches=("$stage/${name}_"*_arm64.deb)
-            if [ "${#matches[@]}" -ne 1 ] || [ ! -f "${matches[0]}" ]; then
-              echo "::error::$bundle must contain one arm64 package for $name"
-              exit 1
-            fi
-            files+=("${matches[0]}")
-          done
-          if sudo chroot "$ROOTFS_MOUNT" apt-get -s --no-remove install "${files[@]#"$ROOTFS_MOUNT"}"; then
-            mkdir -p debs/network-manager
-            mv -- "${files[@]}" debs/network-manager/
-          else
-            echo "::warning::The target cannot install $bundle alongside its existing packages. Keeping Debian NetworkManager $base."
-          fi
 
       - name: "Use Upstream Regulatory Database"
         run: |

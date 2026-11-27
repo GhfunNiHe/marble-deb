@@ -270,28 +270,19 @@ run_target dpkg-query -W -f='${Package} ${db:Status-Abbrev}\n' \
 echo "--- staging DEBs inside the target root ---"
 as_root rm -rf "$stage_host"
 as_root install -d "$stage_host"
+install_args=()
+if [ -z "${pkg_deb[network-manager]+x}" ]; then
+    info "This release has no network-manager DEB. Installing NetworkManager from $target_name."
+    install_args+=(network-manager)
+fi
 for name in "${selected[@]}"; do
-    as_root cp -- "${pkg_deb[$name]}" "$stage_host/"
+    deb=${pkg_deb[$name]}
+    as_root cp -- "$deb" "$stage_host/"
+    install_args+=("$STAGE_DIR/${deb##*/}")
 done
 
 echo "--- installing with the target distribution's APT resolver ---"
-if [ -n "$ROOTFS_MOUNT" ]; then
-    as_root chroot "$ROOTFS_MOUNT" /bin/bash -euo pipefail -c '
-        shopt -s nullglob
-        debs=(/tmp/device-debs/*.deb)
-        ((${#debs[@]} > 0)) || { echo "ERROR: no staged DEBs" >&2; exit 1; }
-        export DEBIAN_FRONTEND=noninteractive
-        apt-get install -y "${debs[@]}"
-    '
-else
-    bash -euo pipefail -c '
-        shopt -s nullglob
-        debs=(/tmp/device-debs/*.deb)
-        ((${#debs[@]} > 0)) || { echo "ERROR: no staged DEBs" >&2; exit 1; }
-        export DEBIAN_FRONTEND=noninteractive
-        apt-get install -y "${debs[@]}"
-    '
-fi
+run_target env DEBIAN_FRONTEND=noninteractive apt-get install -y "${install_args[@]}"
 
 echo "--- verifying installed packages ---"
 for name in "${selected[@]}"; do

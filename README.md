@@ -189,6 +189,7 @@ ESP 分区标签必须保持为 `esp`，不要只修改 `root_partition` 而忽�
 | `linux-redmi-marble` | marble 内核、DTB、内核模块与 ESP 启动载荷。 | [iLtanaka/linux-marble](https://github.com/iLtanaka/linux-marble) |
 | `marble-device-support` | 设备支持服务，包括 WLAN / Bluetooth MAC 恢复、NetworkManager 配置、传感器恢复、IMS 使能和硬件调优。 | [iLtanaka/marble-device-support](https://github.com/iLtanaka/marble-device-support) |
 | `modemmanager` | 带 marble 补丁的 ModemManager，用于 GNSS 解锁、NMEA 合成和相关修复。 | [freedesktop ModemManager](https://gitlab.freedesktop.org/mobile-broadband/ModemManager) |
+| `network-manager` | 在 Ubuntu 和 Debian 镜像上管理网络连接。设备包的补丁在断开移动数据时保留通话和短信使用的 IMS 连接。 | [NetworkManager](https://gitlab.freedesktop.org/NetworkManager/NetworkManager) |
 | `libqmi` | QMI 通信库，包含 QMI_LOC 客户端标识 TLV。 | [freedesktop libqmi](https://gitlab.freedesktop.org/mobile-broadband/libqmi) |
 | `libssc` | Qualcomm SSC / SLPI 传感器通信库。 | [DylanVanAssche/libssc](https://codeberg.org/DylanVanAssche/libssc) |
 | `iio-sensor-proxy-ssc` | 将 SSC 传感器数据提供给 D-Bus，供桌面读取。 | [hadess/iio-sensor-proxy](https://gitlab.freedesktop.org/hadess/iio-sensor-proxy) |

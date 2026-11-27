@@ -299,7 +299,7 @@ jobs:
           sudo chroot "$ROOTFS_MOUNT" apt-get update
           pkgs="systemd systemd-sysv
             sudo vim nano wget curl rsync less
-            network-manager openssh-server wpasupplicant dbus
+            openssh-server wpasupplicant dbus
             ca-certificates chrony iw lm-sensors wireless-regdb
             net-tools iproute2 usbutils kmod e2fsprogs dosfstools util-linux
             bluez zram-tools feedbackd qrtr-tools rmtfs tqftpserv

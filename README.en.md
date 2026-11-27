@@ -189,6 +189,7 @@ All device-specific packages are built and published by [GhfunNiHe/marble-deb-pa
 | `linux-redmi-marble` | marble kernel, DTB, kernel modules, and ESP boot payload. | [iLtanaka/linux-marble](https://github.com/iLtanaka/linux-marble) |
 | `marble-device-support` | Device services, including WLAN / Bluetooth MAC restoration, NetworkManager configuration, sensor recovery, IMS enablement, and hardware tuning. | [iLtanaka/marble-device-support](https://github.com/iLtanaka/marble-device-support) |
 | `modemmanager` | ModemManager with marble patches for GNSS unlocking, NMEA synthesis, and related fixes. | [freedesktop ModemManager](https://gitlab.freedesktop.org/mobile-broadband/ModemManager) |
+| `network-manager` | Manages connections on the Ubuntu and Debian images. The device package preserves the IMS bearer used for calls and SMS when mobile data disconnects. | [NetworkManager](https://gitlab.freedesktop.org/NetworkManager/NetworkManager) |
 | `libqmi` | QMI communication library including the QMI_LOC client-identification TLV. | [freedesktop libqmi](https://gitlab.freedesktop.org/mobile-broadband/libqmi) |
 | `libssc` | Qualcomm SSC / SLPI sensor communication library. | [DylanVanAssche/libssc](https://codeberg.org/DylanVanAssche/libssc) |
 | `iio-sensor-proxy-ssc` | Exposes SSC sensor data over D-Bus for desktop environments. | [hadess/iio-sensor-proxy](https://gitlab.freedesktop.org/hadess/iio-sensor-proxy) |
