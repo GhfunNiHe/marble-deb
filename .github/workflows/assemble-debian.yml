@@ -521,19 +521,27 @@ jobs:
         if: ${{ inputs.desktop == 'Phosh' }}
         run: |
           sudo chroot "$ROOTFS_MOUNT" apt-get update
-          sudo chroot "$ROOTFS_MOUNT" apt-get install -y \
+          # forky/testing currently has no phrog; use GDM3 as the fallback.
+          if sudo chroot "$ROOTFS_MOUNT" apt-cache show phrog >/dev/null 2>&1; then
+            greeter_pkgs="greetd phrog"
+            echo "PHROG_AVAILABLE=1" >> "$GITHUB_ENV"
+          else
+            greeter_pkgs="gdm3"
+            echo "PHROG_AVAILABLE=0" >> "$GITHUB_ENV"
+          fi
+          if ! sudo chroot "$ROOTFS_MOUNT" apt-get install -y \
             phosh-core phosh-mobile-settings gnome-terminal firefox-esr \
-            gnome-calls chatty mmsd-tng gnome-contacts \
-            greetd phrog \
-            || sudo chroot "$ROOTFS_MOUNT" apt-get install -y \
-                 phosh gnome-calls chatty mmsd-tng gnome-contacts greetd phrog
+            gnome-calls chatty mmsd-tng gnome-contacts $greeter_pkgs; then
+            sudo chroot "$ROOTFS_MOUNT" apt-get install -y \
+              phosh gnome-calls chatty mmsd-tng gnome-contacts $greeter_pkgs
+          fi
           echo "✓ Phosh installed"
 
       # phrog ships /usr/lib/systemd/system/greetd.service.d/phrog.conf, which
       # rewrites greetd's ExecStart to use /etc/greetd/phrog.toml, so this file
       # is what actually decides how Phosh gets started.
       - name: "Configure greetd + phrog (Phosh)"
-        if: ${{ inputs.desktop == 'Phosh' }}
+        if: ${{ inputs.desktop == 'Phosh' && env.PHROG_AVAILABLE == '1' }}
         run: |
           sudo mkdir -p "$ROOTFS_MOUNT/etc/greetd"
           {
@@ -563,6 +571,28 @@ jobs:
             "$ROOTFS_MOUNT/etc/systemd/system/display-manager.service"
           sudo chroot "$ROOTFS_MOUNT" systemctl set-default graphical.target
           echo "✓ greetd + phrog configured"
+
+      - name: "Configure GDM3 (Phosh fallback)"
+        if: ${{ inputs.desktop == 'Phosh' && env.PHROG_AVAILABLE != '1' }}
+        run: |
+          sudo mkdir -p "$ROOTFS_MOUNT/etc/gdm3" \
+            "$ROOTFS_MOUNT/var/lib/AccountsService/users"
+          sudo tee "$ROOTFS_MOUNT/var/lib/AccountsService/users/${{ inputs.username }}" >/dev/null <<EOF
+          [User]
+          Session=phosh
+          XSession=phosh
+          EOF
+          if [ "${{ inputs.autologin }}" = true ]; then
+            sudo tee "$ROOTFS_MOUNT/etc/gdm3/daemon.conf" >/dev/null <<EOF
+          [daemon]
+          WaylandEnable=true
+          AutomaticLoginEnable=true
+          AutomaticLogin=${{ inputs.username }}
+          EOF
+          fi
+          sudo chroot "$ROOTFS_MOUNT" systemctl enable gdm3
+          sudo chroot "$ROOTFS_MOUNT" systemctl set-default graphical.target
+          echo "✓ GDM3 configured for the Phosh desktop"
 
       - name: "Install KDE Plasma Mobile"
         if: ${{ inputs.desktop == 'KDE Plasma Mobile' }}
