@@ -19,8 +19,6 @@
 #                 root, used by the container install tests.
 #   DEB_DIR       directory holding the downloaded DEBs (default: debs).
 
-set -euo pipefail
-
 ROOTFS_MOUNT="${ROOTFS_MOUNT:-}"
 DEB_DIR="${DEB_DIR:-debs}"
 STAGE_DIR=/tmp/device-debs
