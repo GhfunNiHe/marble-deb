@@ -121,7 +121,7 @@ jobs:
               dpkg-source -x "$dsc" src
               cd src
               DEB_BUILD_PROFILES=nodoc DEB_BUILD_OPTIONS=nocheck \
-                dpkg-buildpackage -b -us -uc -d
+                dpkg-buildpackage -B -us -uc -d
             )
             cp "$builddir"/*.deb deps/
             rm -rf "$builddir"
