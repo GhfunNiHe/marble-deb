@@ -341,6 +341,16 @@ jobs:
             || { echo "::error::system D-Bus did not start"; exit 1; }
           echo "✓ system D-Bus started"
 
+      - name: "Configure adduser system ranges"
+        run: |
+          for entry in FIRST_SYSTEM_UID=100 LAST_SYSTEM_UID=999 \
+                       FIRST_SYSTEM_GID=100 LAST_SYSTEM_GID=999; do
+            key=${entry%%=*}
+            sudo sed -i "/^#\?${key}=/d" "$ROOTFS_MOUNT/etc/adduser.conf"
+            echo "$entry" | sudo tee -a "$ROOTFS_MOUNT/etc/adduser.conf" >/dev/null
+          done
+          echo "✓ adduser system ranges configured"
+
       - name: "Use Upstream Regulatory Database"
         run: |
           sudo chroot "$ROOTFS_MOUNT" update-alternatives --set regulatory.db \
