@@ -168,33 +168,49 @@ jobs:
           ls -lh debs
           echo "✓ Device .debs downloaded"
 
-      # Noble's archive has libmbim 1.31.2, below ModemManager's 1.32 floor.
-      # Pull the unmodified 1.32.0 build from the dedicated release and
-      # replace any older device-release copy by binary package name before
-      # install-device-debs.sh classifies the set. Other suites keep their
-      # archive copy; the installer excludes the device-release debs there.
-      - name: "Download Noble libmbim"
+      # Noble ships libmbim 1.31.2 and WirePlumber 0.4.17, both below the
+      # floors required by ModemManager and callaudiod. Rebuild the matching
+      # Debian sources on the Noble builder.
+      - name: "Build Noble dependency DEBs"
         if: ${{ inputs.distro_suite == 'noble' }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          mkdir -p noble-debs
-          gh release download ubuntu-noble --repo "${{ inputs.deb_repo }}" \
-            --pattern 'libmbim-glib4_*.deb' \
-            --pattern 'libmbim-proxy_*.deb' \
-            --pattern 'libmbim-utils_*.deb' --dir noble-debs --clobber
-          for f in noble-debs/*.deb; do
-            pkg=$(dpkg-deb -f "$f" Package)
-            for old in debs/*.deb; do
-              if [ "$(dpkg-deb -f "$old" Package)" = "$pkg" ]; then
-                echo "  replacing device $pkg: $(basename "$old")"
-                rm -f "$old"
-              fi
-            done
-            cp -f "$f" debs/
-          done
-          echo "  libmbim source: ${{ inputs.deb_repo }} @ ubuntu-noble"
-          ls -lh debs/libmbim-*.deb
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential debhelper fakeroot dpkg-dev \
+            bash-completion gobject-introspection gtk-doc-tools help2man \
+            libglib2.0-dev libgirepository1.0-dev meson ninja-build pkgconf \
+            dh-exec gnome-pkg-tools liblua5.4-dev libpipewire-0.3-dev \
+            libspa-0.2-dev libsystemd-dev systemd-dev dbus python3-lxml
+
+          build_src() {
+            name="$1"; shift
+            builddir=$(mktemp -d "$RUNNER_TEMP/$name.XXXXXXXX")
+            (
+              cd "$builddir"
+              for url in "$@"; do
+                curl -fsSLO "$url"
+              done
+              dsc=$(find . -maxdepth 1 -name '*.dsc' -print -quit)
+              dpkg-source -x "$dsc" src
+              cd src
+              DEB_BUILD_PROFILES=nodoc DEB_BUILD_OPTIONS=nocheck \
+                dpkg-buildpackage -b -us -uc -d
+            )
+            cp "$builddir"/*.deb "$GITHUB_WORKSPACE/debs/"
+            rm -rf "$builddir"
+          }
+
+          build_src libmbim \
+            https://deb.debian.org/debian/pool/main/libm/libmbim/libmbim_1.32.0-1.dsc \
+            https://deb.debian.org/debian/pool/main/libm/libmbim/libmbim_1.32.0.orig.tar.xz \
+            https://deb.debian.org/debian/pool/main/libm/libmbim/libmbim_1.32.0-1.debian.tar.xz
+          build_src wireplumber \
+            https://deb.debian.org/debian/pool/main/w/wireplumber/wireplumber_0.5.12-1~bpo13+1.dsc \
+            https://deb.debian.org/debian/pool/main/w/wireplumber/wireplumber_0.5.12.orig.tar.bz2 \
+            https://deb.debian.org/debian/pool/main/w/wireplumber/wireplumber_0.5.12-1~bpo13+1.debian.tar.xz
+          ls -lh debs/
+          echo "✓ Noble dependency DEBs built"
 
       - name: "Download Extra .debs"
         if: ${{ inputs.extra_deb_urls != '' }}

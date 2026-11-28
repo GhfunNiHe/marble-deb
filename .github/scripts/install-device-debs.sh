@@ -159,16 +159,33 @@ selected=()
 for name in "${install_names[@]}"; do
     case "$name" in
         callaudiod)
-            # Desktops install WirePlumber later. Ask target APT to keep it
-            # alongside this daemon, using the release DEB's actual dependencies.
-            probe_deb=$(run_target mktemp --suffix=.deb /tmp/callaudiod.XXXXXXXX)
-            as_root install -m 0644 -- "${pkg_deb[$name]}" "$ROOTFS_MOUNT$probe_deb"
-            if run_target apt-get -s --no-remove install wireplumber "$probe_deb" >/dev/null 2>&1; then
+            # Desktops install WirePlumber later. Prefer the WirePlumber
+            # stack shipped by this release when it is present, so the probe
+            # resolves against the versions that will actually be installed.
+            probe_sources=("${pkg_deb[$name]}")
+            for dep in wireplumber libwireplumber-0.5-0; do
+                if [ -n "${pkg_deb[$dep]+x}" ]; then
+                    probe_sources+=("${pkg_deb[$dep]}")
+                fi
+            done
+            probe_paths=()
+            for src in "${probe_sources[@]}"; do
+                dest=$(run_target mktemp --suffix=.deb /tmp/probe.XXXXXXXX)
+                as_root install -m 0644 -- "$src" "$ROOTFS_MOUNT$dest"
+                probe_paths+=("$dest")
+            done
+            probe_args=("${probe_paths[@]}")
+            if [ -z "${pkg_deb[wireplumber]+x}" ]; then
+                probe_args+=(wireplumber)
+            fi
+            if run_target apt-get -s --no-remove install "${probe_args[@]}" >/dev/null 2>&1; then
                 selected+=("$name")
             else
-                excluded+=("$name (target APT cannot install the release daemon alongside WirePlumber without removing packages)")
+                excluded+=("$name (target APT cannot co-install the release daemon and WirePlumber)")
             fi
-            run_target rm -f -- "$probe_deb"
+            for dest in "${probe_paths[@]}"; do
+                run_target rm -f -- "$dest"
+            done
             ;;
         libmbim*)
             if [ "$skip_local_libmbim" -eq 1 ]; then

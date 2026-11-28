@@ -172,6 +172,35 @@ jobs:
           ls -lh debs
           echo "✓ Device .debs downloaded"
 
+      # Trixie ships WirePlumber 0.5.8, below callaudiod's 0.5.11 floor.
+      # Rebuild the backported 0.5.12 source on the Noble builder.
+      - name: "Build Trixie dependency DEBs"
+        if: ${{ inputs.distro_suite == 'trixie' }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential debhelper fakeroot dpkg-dev \
+            dh-exec gnome-pkg-tools gobject-introspection \
+            libgirepository1.0-dev libglib2.0-dev liblua5.4-dev \
+            libpipewire-0.3-dev libspa-0.2-dev libsystemd-dev \
+            meson ninja-build pkgconf systemd-dev dbus python3-lxml
+
+          builddir=$(mktemp -d "$RUNNER_TEMP/wireplumber.XXXXXXXX")
+          cd "$builddir"
+          for f in \
+            wireplumber_0.5.12-1~bpo13+1.dsc \
+            wireplumber_0.5.12.orig.tar.bz2 \
+            wireplumber_0.5.12-1~bpo13+1.debian.tar.xz; do
+            curl -fsSLO "https://deb.debian.org/debian/pool/main/w/wireplumber/$f"
+          done
+          dpkg-source -x wireplumber_0.5.12-1~bpo13+1.dsc src
+          cd src
+          DEB_BUILD_PROFILES=nodoc DEB_BUILD_OPTIONS=nocheck \
+            dpkg-buildpackage -b -us -uc -d
+          cp ../*.deb "$GITHUB_WORKSPACE/debs/"
+          echo "✓ Trixie dependency DEBs built"
+
       - name: "Download Extra .debs"
         if: ${{ inputs.extra_deb_urls != '' }}
         run: |
