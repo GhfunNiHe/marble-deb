@@ -350,6 +350,14 @@ jobs:
           sudo chroot "$ROOTFS_MOUNT" apt-get install -y $pkgs ${{ inputs.extra_packages }}
           echo "✓ Base packages installed"
 
+      - name: "Start system D-Bus"
+        run: |
+          sudo mkdir -p "$ROOTFS_MOUNT/run/dbus"
+          sudo chroot "$ROOTFS_MOUNT" dbus-daemon --system --fork
+          sudo test -S "$ROOTFS_MOUNT/run/dbus/system_bus_socket" \
+            || { echo "::error::system D-Bus did not start"; exit 1; }
+          echo "✓ system D-Bus started"
+
       - name: "Use Upstream Regulatory Database"
         run: |
           sudo chroot "$ROOTFS_MOUNT" update-alternatives --set regulatory.db \
@@ -701,6 +709,8 @@ jobs:
       - name: "Unmount Everything"
         if: always()
         run: |
+          pid=$(sudo cat "$ROOTFS_MOUNT/run/dbus/pid" 2>/dev/null || true)
+          if [ -n "$pid" ]; then sudo kill "$pid" 2>/dev/null || true; fi
           sudo umount "$ESP_MOUNT"             2>/dev/null || true
           sudo umount "$ROOTFS_MOUNT/dev/pts"  2>/dev/null || true
           sudo umount "$ROOTFS_MOUNT/dev"      2>/dev/null || true
