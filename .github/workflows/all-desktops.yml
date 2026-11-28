@@ -157,7 +157,6 @@ jobs:
         suite:
           - trixie
           - forky
-          - sid
         desktop:
           - 'Phosh'
           - 'KDE Plasma Mobile'
