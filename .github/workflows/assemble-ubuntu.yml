@@ -174,7 +174,7 @@ jobs:
             build-essential debhelper fakeroot dpkg-dev \
             bash-completion gobject-introspection gtk-doc-tools help2man \
             libglib2.0-dev libgirepository1.0-dev meson ninja-build pkgconf \
-            dh-exec gnome-pkg-tools liblua5.4-dev libpipewire-0.3-dev \
+            dh-exec gnome-pkg-tools doxygen liblua5.4-dev libpipewire-0.3-dev \
             libspa-0.2-dev libsystemd-dev systemd-dev dbus python3-lxml
 
           build_src() {
