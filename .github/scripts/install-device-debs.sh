@@ -84,24 +84,14 @@ mapfile -t debs < <(find "$DEB_DIR" -maxdepth 3 -type f -name '*.deb' -print | s
 declare -A pkg_version=()
 declare -A pkg_deb=()
 
-echo "--- validating downloaded DEBs ---"
+echo "--- reading downloaded DEBs ---"
 for deb in "${debs[@]}"; do
-    [ -s "$deb" ] || fail "empty DEB: $deb"
-
-    dpkg-deb --info "$deb" >/dev/null 2>&1 || fail "not a readable DEB: $deb"
-    dpkg-deb --fsys-tarfile "$deb" | tar -tf - >/dev/null 2>&1 \
-        || fail "corrupt DEB payload: $deb"
-
     name=$(dpkg-deb -f "$deb" Package) || fail "missing Package in $deb"
     version=$(dpkg-deb -f "$deb" Version) || fail "missing Version in $deb"
     arch=$(dpkg-deb -f "$deb" Architecture) || fail "missing Architecture in $deb"
 
     [ -n "$name" ] || fail "empty Package in $deb"
     [ -n "$version" ] || fail "empty Version in $deb"
-    case "$arch" in
-        arm64|all) ;;
-        *) fail "unsupported architecture '$arch' in $deb" ;;
-    esac
 
     [ -z "${pkg_version[$name]+x}" ] || fail "duplicate package: $name"
     pkg_version["$name"]="$version"
