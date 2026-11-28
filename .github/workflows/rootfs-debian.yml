@@ -172,8 +172,6 @@ jobs:
           ls -lh debs
           echo "✓ Device .debs downloaded"
 
-      # Trixie ships WirePlumber 0.5.8, below callaudiod's 0.5.11 floor.
-      # Rebuild the backported 0.5.12 source on the Noble builder.
       - name: "Build Trixie dependency DEBs"
         if: ${{ inputs.distro_suite == 'trixie' }}
         run: |
@@ -526,7 +524,6 @@ jobs:
         if: ${{ inputs.desktop == 'Phosh' }}
         run: |
           sudo chroot "$ROOTFS_MOUNT" apt-get update
-          # forky/testing currently has no phrog; use GDM3 as the fallback.
           if sudo chroot "$ROOTFS_MOUNT" apt-get -s install phrog >/dev/null 2>&1; then
             greeter_pkgs="greetd phrog"
             echo "PHROG_AVAILABLE=1" >> "$GITHUB_ENV"

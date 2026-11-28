@@ -168,9 +168,6 @@ jobs:
           ls -lh debs
           echo "✓ Device .debs downloaded"
 
-      # Noble ships libmbim 1.31.2 and WirePlumber 0.4.17, both below the
-      # floors required by ModemManager and callaudiod. Rebuild the matching
-      # Debian sources on the Noble builder.
       - name: "Build Noble dependency DEBs"
         if: ${{ inputs.distro_suite == 'noble' }}
         run: |
