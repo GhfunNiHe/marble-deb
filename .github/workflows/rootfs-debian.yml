@@ -527,7 +527,7 @@ jobs:
         run: |
           sudo chroot "$ROOTFS_MOUNT" apt-get update
           # forky/testing currently has no phrog; use GDM3 as the fallback.
-          if sudo chroot "$ROOTFS_MOUNT" apt-cache show phrog >/dev/null 2>&1; then
+          if sudo chroot "$ROOTFS_MOUNT" apt-get -s install phrog >/dev/null 2>&1; then
             greeter_pkgs="greetd phrog"
             echo "PHROG_AVAILABLE=1" >> "$GITHUB_ENV"
           else
