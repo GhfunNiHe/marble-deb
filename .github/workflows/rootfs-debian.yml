@@ -177,7 +177,6 @@ jobs:
       - name: "Build Trixie dependency DEBs"
         if: ${{ inputs.distro_suite == 'trixie' }}
         run: |
-          set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential debhelper fakeroot dpkg-dev \
