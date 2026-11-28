@@ -63,6 +63,10 @@ on:
         description: 'Prebuilt suite dependency DEB artifact'
         type: string
         default: ''
+      debs_artifact:
+        description: 'Prebuilt device DEB artifact'
+        type: string
+        default: ''
     secrets:
       ROOTFS_PASSWORD:
         description: 'RootFS password; empty falls back to the workflow default'
@@ -132,6 +136,13 @@ jobs:
       # Collect the device .debs
       # ----------------------------------------------------------------
 
+      - name: "Download device DEB artifact"
+        if: ${{ inputs.debs_artifact != '' }}
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.debs_artifact }}
+          path: debs
+
       - name: "Download suite dependency DEBs"
         if: ${{ inputs.deps_artifact != '' }}
         uses: actions/download-artifact@v8
@@ -140,6 +151,7 @@ jobs:
           path: debs
 
       - name: "Download Device .debs"
+        if: ${{ inputs.debs_artifact == '' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DEB_REPO: ${{ inputs.deb_repo }}

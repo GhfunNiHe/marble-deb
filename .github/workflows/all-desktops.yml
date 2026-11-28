@@ -61,6 +61,28 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  download-debs:
+    name: Download device DEBs
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: "Download device DEBs"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p debs
+          RELEASE="${{ inputs.deb_release }}"
+          if [ "$RELEASE" = latest ]; then
+            RELEASE=apt
+          fi
+          gh release download "$RELEASE" --repo "${{ inputs.deb_repo }}" --pattern '*.deb' --dir debs --clobber
+          ls -lh debs
+      - name: "Upload device DEB artifact"
+        uses: actions/upload-artifact@v7
+        with:
+          name: device-debs
+          path: debs/*.deb
+          if-no-files-found: error
+
   build-deps:
     name: Dependencies ${{ matrix.suite }}
     strategy:
@@ -127,7 +149,9 @@ jobs:
 
   build-debian:
     name: Build
-    needs: build-deps
+    needs:
+      - build-deps
+      - download-debs
     strategy:
       fail-fast: false
       matrix:
@@ -157,9 +181,13 @@ jobs:
       extra_deb_urls: ''
       extra_packages: ''
       deps_artifact: ${{ matrix.suite == 'trixie' && 'suite-deps-trixie' || '' }}
+      debs_artifact: device-debs
 
   build-ubuntu:
     name: Build
+    needs:
+      - build-deps
+      - download-debs
     strategy:
       fail-fast: false
       matrix:
@@ -189,6 +217,7 @@ jobs:
       extra_deb_urls: ''
       extra_packages: ''
       deps_artifact: ${{ matrix.suite == 'noble' && 'suite-deps-noble' || '' }}
+      debs_artifact: device-debs
 
   publish:
     name: Publish Pre-Release
