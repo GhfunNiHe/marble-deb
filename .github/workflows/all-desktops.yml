@@ -61,8 +61,73 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  build-deps:
+    name: Dependencies ${{ matrix.suite }}
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          - trixie
+          - noble
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+
+    steps:
+      - name: "Checkout Repo"
+        uses: actions/checkout@v7
+
+      - name: "Build dependency DEBs"
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential debhelper fakeroot dpkg-dev \
+            bash-completion gobject-introspection gtk-doc-tools help2man \
+            libglib2.0-dev libgirepository1.0-dev meson ninja-build pkgconf \
+            dh-exec gnome-pkg-tools liblua5.4-dev libpipewire-0.3-dev \
+            libspa-0.2-dev libsystemd-dev systemd-dev dbus python3-lxml
+
+          mkdir -p deps
+          build_src() {
+            name="$1"; shift
+            builddir=$(mktemp -d "$RUNNER_TEMP/$name.XXXXXXXX")
+            (
+              cd "$builddir"
+              for url in "$@"; do
+                curl -fsSLO "$url"
+              done
+              dsc=$(find . -maxdepth 1 -name '*.dsc' -print -quit)
+              dpkg-source -x "$dsc" src
+              cd src
+              DEB_BUILD_PROFILES=nodoc DEB_BUILD_OPTIONS=nocheck \
+                dpkg-buildpackage -b -us -uc -d
+            )
+            cp "$builddir"/*.deb deps/
+            rm -rf "$builddir"
+          }
+
+          if [ "${{ matrix.suite }}" = noble ]; then
+            build_src libmbim \
+              https://deb.debian.org/debian/pool/main/libm/libmbim/libmbim_1.32.0-1.dsc \
+              https://deb.debian.org/debian/pool/main/libm/libmbim/libmbim_1.32.0.orig.tar.xz \
+              https://deb.debian.org/debian/pool/main/libm/libmbim/libmbim_1.32.0-1.debian.tar.xz
+          fi
+          build_src wireplumber \
+            https://deb.debian.org/debian/pool/main/w/wireplumber/wireplumber_0.5.12-1~bpo13+1.dsc \
+            https://deb.debian.org/debian/pool/main/w/wireplumber/wireplumber_0.5.12.orig.tar.bz2 \
+            https://deb.debian.org/debian/pool/main/w/wireplumber/wireplumber_0.5.12-1~bpo13+1.debian.tar.xz
+          ls -lh deps/
+
+      - name: "Upload dependency DEBs"
+        uses: actions/upload-artifact@v7
+        with:
+          name: suite-deps-${{ matrix.suite }}
+          path: deps/*.deb
+          if-no-files-found: error
+
   build-debian:
     name: Build
+    needs: build-deps
     strategy:
       fail-fast: false
       matrix:
@@ -91,6 +156,7 @@ jobs:
       deb_release: ${{ inputs.deb_release }}
       extra_deb_urls: ''
       extra_packages: ''
+      deps_artifact: ${{ matrix.suite == 'trixie' && 'suite-deps-trixie' || '' }}
 
   build-ubuntu:
     name: Build
@@ -122,6 +188,7 @@ jobs:
       deb_release: ${{ inputs.deb_release }}
       extra_deb_urls: ''
       extra_packages: ''
+      deps_artifact: ${{ matrix.suite == 'noble' && 'suite-deps-noble' || '' }}
 
   publish:
     name: Publish Pre-Release

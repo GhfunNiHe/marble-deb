@@ -162,6 +162,7 @@ jobs:
   build-rootfs:
     name: Build
     permissions:
+      actions: read
       contents: read
     uses: ./.github/workflows/assemble-ubuntu.yml
     with:
